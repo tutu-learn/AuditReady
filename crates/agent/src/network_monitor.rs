@@ -106,15 +106,13 @@ mod tcpdump_dns {
         let stdout = child.stdout.take().ok_or_else(|| anyhow::anyhow!("no stdout"))?;
         let reader = BufReader::new(stdout);
 
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                if let Some(q) = parse_tcpdump_line(&line) {
-                    let mut guard = queries.lock().unwrap_or_else(|p| p.into_inner());
-                    guard.push(q);
-                    const MAX_QUERIES: usize = 1000;
-                    if guard.len() > MAX_QUERIES {
-                        guard.remove(0);
-                    }
+        for line in reader.lines().map_while(Result::ok) {
+            if let Some(q) = parse_tcpdump_line(&line) {
+                let mut guard = queries.lock().unwrap_or_else(|p| p.into_inner());
+                guard.push(q);
+                const MAX_QUERIES: usize = 1000;
+                if guard.len() > MAX_QUERIES {
+                    guard.remove(0);
                 }
             }
         }

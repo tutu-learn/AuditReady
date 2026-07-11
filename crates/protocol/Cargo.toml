@@ -1,0 +1,11 @@
+[package]
+name = "auditready-protocol"
+version = "0.1.0"
+edition = "2021"
+description = "Shared wire protocol for the AuditReady remote shell tunnel"
+
+[dependencies]
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
