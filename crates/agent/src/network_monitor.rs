@@ -406,7 +406,7 @@ mod platform {
         let mut queries = vec![];
         for line in lines {
             let cols: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
-            let get = |name: &str| headers.iter().position(|h| h == name).and_then(|i| cols.get(i)).copied();
+            let get = |name: &str| headers.iter().position(|h| *h == name).and_then(|i| cols.get(i)).copied();
 
             let name = get("Entry").unwrap_or("").trim_matches('"').to_string();
             let qtype = get("Type").unwrap_or("").trim_matches('"').to_string();
@@ -500,7 +500,7 @@ mod platform {
 
         for line in lines {
             let cols: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
-            let get = |name: &str| headers.iter().position(|h| h == name).and_then(|i| cols.get(i)).copied();
+            let get = |name: &str| headers.iter().position(|h| *h == name).and_then(|i| cols.get(i)).copied();
 
             let local = format!("{}:{}", get("LocalAddress").unwrap_or(""), get("LocalPort").unwrap_or(""));
             let remote_addr = get("RemoteAddress");

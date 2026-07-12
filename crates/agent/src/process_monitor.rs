@@ -146,10 +146,10 @@ mod platform {
     use sysinfo::Process;
     use windows::Win32::Foundation::{CloseHandle, HANDLE};
     use windows::Win32::Security::{
-        GetTokenInformation, OpenProcessToken, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation,
+        GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation,
     };
     use windows::Win32::System::Threading::{
-        OpenProcess, TerminateProcess, PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE,
+        OpenProcess, OpenProcessToken, TerminateProcess, PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE,
     };
 
     pub fn is_elevated(pid: u32, _proc: &Process) -> bool {
