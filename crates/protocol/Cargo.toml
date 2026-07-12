@@ -1,6 +1,6 @@
 [package]
 name = "auditready-protocol"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Shared wire protocol for the AuditReady remote shell tunnel"
 
