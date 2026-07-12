@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*"
+           Name="AuditReady"
+           Language="1033"
+           Version="0.1.0"
+           Manufacturer="AuditReady"
+           UpgradeCode="a1b2c3d4-e5f6-7890-abcd-ef1234567890">
+    <Package InstallerVersion="200"
+             Compressed="yes"
+             InstallScope="perMachine"
+             InstallPrivileges="elevated"
+             Platform="x64" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of AuditReady is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Feature Id="ProductFeature" Title="AuditReady" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="AuditReady">
+          <Component Id="AuditReadyBinary" Guid="b2c3d4e5-f6a7-8901-bcde-f23456789012">
+            <File Id="AuditReadyEXE"
+                  Source="target\x86_64-pc-windows-msvc\release\auditready.exe"
+                  KeyPath="yes" />
+          </Component>
+          <Component Id="AuditReadyConfig" Guid="c3d4e5f6-a7b8-9012-cdef-345678901234">
+            <File Id="ExampleConfig"
+                  Source="appsettings.json"
+                  Name="appsettings.example.json"
+                  KeyPath="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <ComponentRef Id="AuditReadyBinary" />
+      <ComponentRef Id="AuditReadyConfig" />
+    </ComponentGroup>
+  </Product>
+</Wix>

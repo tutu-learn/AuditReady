@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+            binary: auditready
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+            binary: auditready.exe
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            archive: zip
+            binary: auditready
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: zip
+            binary: auditready
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }} --bin auditready
+
+      - name: Strip binary (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          strip target/${{ matrix.target }}/release/${{ matrix.binary }}
+
+      - name: Prepare package directory
+        shell: bash
+        run: |
+          mkdir -p dist/auditready
+          cp target/${{ matrix.target }}/release/${{ matrix.binary }} dist/auditready/
+          cp appsettings.json dist/auditready/appsettings.example.json
+          cp LICENSE dist/auditready/ 2>/dev/null || true
+
+      - name: Package as tar.gz (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          cp scripts/install.sh dist/auditready/
+          cd dist
+          tar czf auditready-${{ matrix.target }}.tar.gz auditready
+          mv auditready-${{ matrix.target }}.tar.gz ../
+
+      - name: Package as zip (Windows/macOS)
+        if: matrix.os != 'ubuntu-latest'
+        shell: bash
+        run: |
+          cd dist
+          7z a ../auditready-${{ matrix.target }}.zip auditready
+
+      - name: Build Windows MSI
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        shell: bash
+        run: |
+          cargo install cargo-wix
+          cargo wix --no-build --target ${{ matrix.target }} --output ../auditready-${{ matrix.target }}.msi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: auditready-${{ matrix.target }}
+          path: |
+            auditready-${{ matrix.target }}.*
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
