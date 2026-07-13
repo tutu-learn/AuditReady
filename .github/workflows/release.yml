@@ -87,7 +87,7 @@ jobs:
         shell: bash
         run: |
           cargo install cargo-wix
-          cargo wix -p auditready --no-build --target ${{ matrix.target }} --output ../auditready-${{ matrix.target }}.msi
+          cargo wix -p auditready --no-build --target ${{ matrix.target }} --output auditready-${{ matrix.target }}.msi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
