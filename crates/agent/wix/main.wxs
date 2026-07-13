@@ -24,12 +24,12 @@
         <Directory Id="INSTALLFOLDER" Name="AuditReady">
           <Component Id="AuditReadyBinary" Guid="b2c3d4e5-f6a7-8901-bcde-f23456789012">
             <File Id="AuditReadyEXE"
-                  Source="target\x86_64-pc-windows-msvc\release\auditready.exe"
+                  Source="$(var.CargoTargetBinDir)\auditready.exe"
                   KeyPath="yes" />
           </Component>
           <Component Id="AuditReadyConfig" Guid="c3d4e5f6-a7b8-9012-cdef-345678901234">
             <File Id="ExampleConfig"
-                  Source="appsettings.json"
+                  Source="$(var.CargoTargetDir)\..\appsettings.json"
                   Name="appsettings.example.json"
                   KeyPath="yes" />
           </Component>
