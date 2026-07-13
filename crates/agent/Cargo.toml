@@ -1,6 +1,6 @@
 [package]
 name = "auditready"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Cross-platform tool that lists all installed software on Windows and macOS"
 
