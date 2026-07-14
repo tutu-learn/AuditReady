@@ -106,8 +106,8 @@ jobs:
       - name: Generate release tag and name
         id: release
         run: |
-          TAG="nightly-$(date +%Y-%m-%d-%H%M%S)"
-          NAME="Nightly Build $(date +%Y-%m-%d %H:%M:%S)"
+          TAG="nightly-$(date +"%Y-%m-%d-%H%M%S")"
+          NAME="Nightly Build $(date +"%Y-%m-%d %H:%M:%S")"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "name=$NAME" >> $GITHUB_OUTPUT
 
