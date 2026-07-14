@@ -2,10 +2,18 @@
 set -euo pipefail
 
 # Install AuditReady agent as a systemd service on Linux.
-# Usage:
+#
+# Download first, then run (recommended so prompts work interactively):
+#   wget -q https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/install.sh
+#   chmod +x install.sh
+#   sudo ./install.sh
+#
+# Or pipe directly (also supported):
 #   curl -fsSL https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/install.sh | sudo bash
-# Or with a specific version:
-#   VERSION=v0.1.2 sudo -E bash -c 'curl -fsSL ... | bash'
+#   wget -qO- https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/install.sh | sudo bash
+#
+# Non-interactive / automated installs:
+#   sudo DOMAIN=api.example.com TOKEN=abc123 ./install.sh
 
 REPO="tutu-learn/AuditReady"
 VERSION="${VERSION:-latest}"
@@ -66,20 +74,24 @@ echo ""
 echo "Configure the agent (press Enter to keep suggested value):"
 echo ""
 
-read -rp "Backend domain or URL (e.g. api.example.com or localhost:8000): " DOMAIN
-if [ -z "$DOMAIN" ]; then
-    echo "A backend domain is required." >&2
-    exit 1
+if [ -z "${DOMAIN:-}" ]; then
+    read -rp "Backend domain or URL (e.g. api.example.com or localhost:8000): " DOMAIN < /dev/tty
+    if [ -z "$DOMAIN" ]; then
+        echo "A backend domain is required." >&2
+        exit 1
+    fi
 fi
 
 # Strip scheme if the user pasted a full URL; the agent builds ws/wss from the domain.
 DOMAIN=$(echo "$DOMAIN" | sed -E 's|^https?://||' | sed -E 's|/$||')
 
-read -rsp "Agent token: " TOKEN
-echo ""
-if [ -z "$TOKEN" ]; then
-    echo "An agent token is required." >&2
-    exit 1
+if [ -z "${TOKEN:-}" ]; then
+    read -rsp "Agent token: " TOKEN < /dev/tty
+    echo "" > /dev/tty
+    if [ -z "$TOKEN" ]; then
+        echo "An agent token is required." >&2
+        exit 1
+    fi
 fi
 
 # Determine the home directory for the service user so the remote shell starts there.
