@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Install AuditReady agent from a GitHub release.
+# Install AuditReady agent as a systemd service on Linux.
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/YOUR_ORG/YOUR_REPO/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/install.sh | sudo bash
 # Or with a specific version:
-#   VERSION=v1.2.0 ./install.sh
+#   VERSION=v0.1.2 sudo -E bash -c 'curl -fsSL ... | bash'
 
-REPO="YOUR_ORG/YOUR_REPO"
+REPO="tutu-learn/AuditReady"
 VERSION="${VERSION:-latest}"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+CONFIG_DIR="/etc/auditready"
+SERVICE_USER="${SERVICE_USER:-root}"
+
+# Ensure we can install system files.
+if [ "$EUID" -ne 0 ]; then
+    echo "This installer must be run as root (try with sudo)." >&2
+    exit 1
+fi
 
 # Detect architecture.
 ARCH=$(uname -m)
@@ -47,24 +55,90 @@ curl -fsSL "$URL" -o "$TMP_DIR/$ASSET"
 tar xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR"
 
 # Install binary.
-if [ -w "$INSTALL_DIR" ]; then
-    install -m 755 "$TMP_DIR/auditready/auditready" "$INSTALL_DIR/auditready"
-else
-    echo "Need sudo to install to $INSTALL_DIR"
-    sudo install -m 755 "$TMP_DIR/auditready/auditready" "$INSTALL_DIR/auditready"
-fi
-
+install -m 755 "$TMP_DIR/auditready/auditready" "$INSTALL_DIR/auditready"
 echo "Installed auditready to ${INSTALL_DIR}/auditready"
 
-# Copy example config if none exists.
-if [ ! -f "appsettings.json" ]; then
-    cp "$TMP_DIR/auditready/appsettings.example.json" ./appsettings.json
-    echo "Created appsettings.json in the current directory. Edit it before running the agent."
-else
-    echo "appsettings.json already exists in the current directory."
+# Prepare config directory.
+mkdir -p "$CONFIG_DIR"
+
+# Interactive configuration.
+echo ""
+echo "Configure the agent (press Enter to keep suggested value):"
+echo ""
+
+read -rp "Backend domain or URL (e.g. api.example.com or localhost:8000): " DOMAIN
+if [ -z "$DOMAIN" ]; then
+    echo "A backend domain is required." >&2
+    exit 1
 fi
 
+# Strip scheme if the user pasted a full URL; the agent builds ws/wss from the domain.
+DOMAIN=$(echo "$DOMAIN" | sed -E 's|^https?://||' | sed -E 's|/$||')
+
+read -rsp "Agent token: " TOKEN
 echo ""
-echo "Next steps:"
-echo "  1. Edit appsettings.json with your server domain and token."
-echo "  2. Run: auditready"
+if [ -z "$TOKEN" ]; then
+    echo "An agent token is required." >&2
+    exit 1
+fi
+
+# Determine the home directory for the service user so the remote shell starts there.
+if [ "$SERVICE_USER" = "root" ]; then
+    SHELL_HOME="/root"
+else
+    SHELL_HOME=$(getent passwd "$SERVICE_USER" | cut -d: -f6)
+    SHELL_HOME="${SHELL_HOME:-/home/$SERVICE_USER}"
+fi
+
+cat > "$CONFIG_DIR/appsettings.json" <<EOF
+{
+  "server": {
+    "domain": "${DOMAIN}",
+    "token": "${TOKEN}",
+    "interval_seconds": 30,
+    "tunnel_enabled": true,
+    "tunnel_shell": null,
+    "tunnel_cwd": "${SHELL_HOME}"
+  }
+}
+EOF
+chmod 600 "$CONFIG_DIR/appsettings.json"
+echo "Wrote configuration to ${CONFIG_DIR}/appsettings.json"
+
+# Create systemd service.
+SERVICE_FILE="/etc/systemd/system/auditready.service"
+cat > "$SERVICE_FILE" <<EOF
+[Unit]
+Description=AuditReady Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${SERVICE_USER}
+Group=${SERVICE_USER}
+WorkingDirectory=${CONFIG_DIR}
+ExecStart=${INSTALL_DIR}/auditready
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+chmod 644 "$SERVICE_FILE"
+echo "Created systemd service at ${SERVICE_FILE}"
+
+# Reload, enable and start.
+systemctl daemon-reload
+systemctl enable auditready.service
+if systemctl start auditready.service; then
+    echo ""
+    echo "AuditReady is installed and running."
+    echo "  Status: systemctl status auditready"
+    echo "  Logs:   journalctl -u auditready -f"
+else
+    echo ""
+    echo "AuditReady is installed but failed to start. Check the logs:"
+    echo "  journalctl -u auditready -n 50"
+    exit 1
+fi

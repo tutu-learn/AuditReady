@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use auditready_protocol::{ChannelId, TunnelMessage};
 use portable_pty::{CommandBuilder, NativePtySystem, PtyPair, PtySize, PtySystem};
+use std::path::PathBuf;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -50,6 +51,7 @@ impl Drop for ChannelPty {
 pub fn spawn(
     channel_id: ChannelId,
     shell: Option<String>,
+    cwd: Option<String>,
     initial_size: PtySize,
     broker_tx: mpsc::Sender<TunnelMessage>,
 ) -> Result<ChannelPty> {
@@ -60,7 +62,8 @@ pub fn spawn(
     let pair = pty_system.openpty(initial_size).context("open pty")?;
 
     let mut cmd = CommandBuilder::new(&shell);
-    cmd.cwd(std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/")));
+    let cwd = cwd.map(PathBuf::from).or_else(|| std::env::home_dir());
+    cmd.cwd(cwd.unwrap_or_else(|| std::path::PathBuf::from("/")));
 
     // Terminal setup so colors and interactive apps behave as expected.
     cmd.env("TERM", "xterm-256color");
@@ -185,6 +188,7 @@ mod tests {
         let pty = spawn(
             ChannelId::new(),
             Some("/bin/sh".to_string()),
+            None,
             PtySize {
                 rows: 24,
                 cols: 80,
@@ -242,6 +246,7 @@ mod tests {
         let pty = spawn(
             ChannelId::new(),
             Some("/bin/sh".to_string()),
+            None,
             PtySize {
                 rows: 24,
                 cols: 80,

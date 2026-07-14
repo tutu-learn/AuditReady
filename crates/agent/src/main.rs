@@ -82,7 +82,12 @@ async fn main() -> Result<()> {
         let broker_url = settings
             .broker_url()
             .ok_or_else(|| anyhow::anyhow!("tunnel is enabled but server.domain is not configured"))?;
-        tokio::spawn(tunnel::run(broker_url, token, settings.server.tunnel_shell));
+        tokio::spawn(tunnel::run(
+            broker_url,
+            token,
+            settings.server.tunnel_shell,
+            settings.server.tunnel_cwd,
+        ));
     }
 
     // Default: silent mode. Keep the process alive and refresh network state.

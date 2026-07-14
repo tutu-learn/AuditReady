@@ -31,6 +31,7 @@ pub struct TunnelClient {
     broker_url: String,
     token: String,
     shell: Option<String>,
+    cwd: Option<String>,
 }
 
 struct ChannelHandle {
@@ -38,11 +39,17 @@ struct ChannelHandle {
 }
 
 impl TunnelClient {
-    pub fn new(broker_url: String, token: String, shell: Option<String>) -> Self {
+    pub fn new(
+        broker_url: String,
+        token: String,
+        shell: Option<String>,
+        cwd: Option<String>,
+    ) -> Self {
         Self {
             broker_url,
             token,
             shell,
+            cwd,
         }
     }
 
@@ -219,13 +226,14 @@ impl TunnelClient {
                 }
                 tracing::info!(channel_id = %channel_id.0, "opening channel");
                 let shell = command.or_else(|| self.shell.clone());
+                let cwd = self.cwd.clone();
                 let size = PtySize {
                     rows: 24,
                     cols: 80,
                     pixel_width: 0,
                     pixel_height: 0,
                 };
-                match super::pty::spawn(channel_id, shell, size, broker_tx.clone()) {
+                match super::pty::spawn(channel_id, shell, cwd, size, broker_tx.clone()) {
                     Ok(pty) => {
                         channels.insert(channel_id, ChannelHandle { pty });
                     }
@@ -332,8 +340,13 @@ async fn wait_for_broker_hello(
 }
 
 /// Public entry point used by `main.rs`.
-pub async fn run(broker_url: String, token: String, shell: Option<String>) {
-    let client = TunnelClient::new(broker_url, token, shell);
+pub async fn run(
+    broker_url: String,
+    token: String,
+    shell: Option<String>,
+    cwd: Option<String>,
+) {
+    let client = TunnelClient::new(broker_url, token, shell, cwd);
     client.run().await;
 }
 
@@ -383,6 +396,7 @@ mod tests {
             "ws://localhost:8000/audit_ready/tunnel/agent".to_string(),
             "token".to_string(),
             None,
+            None,
         );
         let (broker_tx, mut broker_rx) = mpsc::channel(8);
         let channels: DashMap<ChannelId, ChannelHandle> = DashMap::new();
@@ -409,6 +423,7 @@ mod tests {
         let client = TunnelClient::new(
             "ws://localhost:8000/audit_ready/tunnel/agent".to_string(),
             "token".to_string(),
+            None,
             None,
         );
         let (broker_tx, _broker_rx) = mpsc::channel(8);

@@ -30,6 +30,9 @@ pub struct ServerSettings {
     /// Optional shell command for tunnel channels. Defaults to `$SHELL` or `/bin/sh`.
     #[serde(default)]
     pub tunnel_shell: Option<String>,
+    /// Working directory for tunnel channels. Defaults to the process current directory.
+    #[serde(default)]
+    pub tunnel_cwd: Option<String>,
 }
 
 impl Default for ServerSettings {
@@ -40,6 +43,7 @@ impl Default for ServerSettings {
             interval_seconds: default_interval(),
             tunnel_enabled: false,
             tunnel_shell: None,
+            tunnel_cwd: None,
         }
     }
 }
@@ -66,6 +70,7 @@ impl AppSettings {
     /// - `AUDITREADY_INTERVAL_SECONDS`
     /// - `AUDITREADY_TUNNEL_ENABLED`
     /// - `AUDITREADY_TUNNEL_SHELL`
+    /// - `AUDITREADY_TUNNEL_CWD`
     pub fn apply_env_overrides(&mut self) {
         if let Ok(v) = std::env::var("AUDITREADY_DOMAIN") {
             if !v.is_empty() {
@@ -88,6 +93,11 @@ impl AppSettings {
         if let Ok(v) = std::env::var("AUDITREADY_TUNNEL_SHELL") {
             if !v.is_empty() {
                 self.server.tunnel_shell = Some(v);
+            }
+        }
+        if let Ok(v) = std::env::var("AUDITREADY_TUNNEL_CWD") {
+            if !v.is_empty() {
+                self.server.tunnel_cwd = Some(v);
             }
         }
     }
