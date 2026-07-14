@@ -95,7 +95,7 @@ cat > "$CONFIG_DIR/appsettings.json" <<EOF
   "server": {
     "domain": "${DOMAIN}",
     "token": "${TOKEN}",
-    "interval_seconds": 30,
+    "interval_seconds": 10,
     "tunnel_enabled": true,
     "tunnel_shell": null,
     "tunnel_cwd": "${SHELL_HOME}"
