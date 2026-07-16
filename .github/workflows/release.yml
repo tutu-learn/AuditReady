@@ -69,6 +69,7 @@ jobs:
         shell: bash
         run: |
           cp scripts/install.sh dist/auditready/
+w          cp scripts/restart.sh dist/auditready/
           cd dist
           tar czf auditready-${{ matrix.target }}.tar.gz auditready
           mv auditready-${{ matrix.target }}.tar.gz ../

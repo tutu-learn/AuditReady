@@ -66,6 +66,12 @@ tar xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR"
 install -m 755 "$TMP_DIR/auditready/auditready" "$INSTALL_DIR/auditready"
 echo "Installed auditready to ${INSTALL_DIR}/auditready"
 
+# Install helper scripts if present in the release archive.
+if [ -f "$TMP_DIR/auditready/restart.sh" ]; then
+    install -m 755 "$TMP_DIR/auditready/restart.sh" "$INSTALL_DIR/auditready-restart"
+    echo "Installed auditready-restart to ${INSTALL_DIR}/auditready-restart"
+fi
+
 # Prepare config directory.
 mkdir -p "$CONFIG_DIR"
 
@@ -146,8 +152,9 @@ systemctl enable auditready.service
 if systemctl start auditready.service; then
     echo ""
     echo "AuditReady is installed and running."
-    echo "  Status: systemctl status auditready"
-    echo "  Logs:   journalctl -u auditready -f"
+    echo "  Status:  systemctl status auditready"
+    echo "  Logs:    journalctl -u auditready -f"
+    echo "  Restart: auditready-restart"
 else
     echo ""
     echo "AuditReady is installed but failed to start. Check the logs:"
