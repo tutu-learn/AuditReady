@@ -21,6 +21,12 @@ const MAX_MESSAGE_SIZE: usize = 256 * 1024;
 const MAX_CHANNELS: usize = 64;
 /// Outbound message queue capacity (towards the WebSocket writer).
 const OUTBOUND_CAPACITY: usize = 256;
+/// Interval between WebSocket pings sent to the broker. Keeps idle connections
+/// alive through proxies and liveness-checks the peer.
+const PING_INTERVAL_SECONDS: u64 = 30;
+/// Max silence from the broker before the connection is considered dead. Must
+/// exceed PING_INTERVAL_SECONDS so a few lost pongs don't trigger a reconnect.
+const BROKER_TIMEOUT_SECONDS: u64 = 120;
 /// Initial reconnect delay in seconds.
 const RECONNECT_BASE_SECONDS: u64 = 1;
 /// Maximum reconnect delay in seconds.
@@ -102,30 +108,62 @@ impl TunnelClient {
 
         let (mut ws_tx, mut ws_rx) = ws.split();
 
-        // Task: serialize outbound tunnel messages and send over WS.
+        // Task: serialize outbound tunnel messages and send over WS; also
+        // sends a ping every PING_INTERVAL_SECONDS so dead connections are
+        // detected (a half-open TCP socket can otherwise hang for hours).
         let writer = tokio::spawn(async move {
-            while let Some(msg) = broker_rx.recv().await {
-                let text = match serde_json::to_string(&msg) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        tracing::warn!("failed to serialize tunnel message: {}", e);
-                        continue;
+            let mut ping = tokio::time::interval(Duration::from_secs(PING_INTERVAL_SECONDS));
+            ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            ping.tick().await; // skip the immediate first tick
+            loop {
+                tokio::select! {
+                    msg = broker_rx.recv() => {
+                        let Some(msg) = msg else { break };
+                        let text = match serde_json::to_string(&msg) {
+                            Ok(t) => t,
+                            Err(e) => {
+                                tracing::warn!("failed to serialize tunnel message: {}", e);
+                                continue;
+                            }
+                        };
+                        if text.len() > MAX_MESSAGE_SIZE {
+                            tracing::warn!("outbound tunnel message exceeds size limit; dropping");
+                            continue;
+                        }
+                        if let Err(e) = ws_tx.send(Message::Text(text)).await {
+                            tracing::warn!("websocket send error: {}", e);
+                            break;
+                        }
                     }
-                };
-                if text.len() > MAX_MESSAGE_SIZE {
-                    tracing::warn!("outbound tunnel message exceeds size limit; dropping");
-                    continue;
-                }
-                if let Err(e) = ws_tx.send(Message::Text(text)).await {
-                    tracing::warn!("websocket send error: {}", e);
-                    break;
+                    _ = ping.tick() => {
+                        if let Err(e) = ws_tx.send(Message::Ping(Vec::new())).await {
+                            tracing::warn!("websocket ping error: {}", e);
+                            break;
+                        }
+                    }
                 }
             }
         });
 
-        // Main loop: read websocket frames and dispatch.
+        // Main loop: read websocket frames and dispatch. If the broker goes
+        // silent for too long (dead server, half-open TCP), assume the
+        // connection is broken and reconnect instead of hanging for hours.
         let result = loop {
-            match ws_rx.next().await {
+            let frame = match tokio::time::timeout(
+                Duration::from_secs(BROKER_TIMEOUT_SECONDS),
+                ws_rx.next(),
+            )
+            .await
+            {
+                Ok(frame) => frame,
+                Err(_) => {
+                    break Err(anyhow::anyhow!(
+                        "no traffic from broker for {}s; assuming dead connection",
+                        BROKER_TIMEOUT_SECONDS
+                    ))
+                }
+            };
+            match frame {
                 Some(Ok(Message::Text(text))) => {
                     if text.len() > MAX_MESSAGE_SIZE {
                         tracing::warn!(
@@ -162,7 +200,7 @@ impl TunnelClient {
                     break Ok(());
                 }
                 Some(Err(e)) => {
-                    break Err(e);
+                    break Err(anyhow::Error::from(e));
                 }
                 None => {
                     tracing::info!("websocket stream ended");

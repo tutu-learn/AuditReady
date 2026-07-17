@@ -77,6 +77,7 @@ jobs:
         run: |
           cp scripts/install.sh dist/auditready/
           cp scripts/restart.sh dist/auditready/
+          cp scripts/update.sh dist/auditready/
           cd dist
           tar czf auditready-${{ matrix.target }}.tar.gz auditready
           mv auditready-${{ matrix.target }}.tar.gz ../

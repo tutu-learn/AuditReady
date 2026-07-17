@@ -73,6 +73,7 @@ pub struct ProcessPayload {
 pub struct NetworkTrafficPayload {
     pub interfaces: Vec<NetworkInterfacePayload>,
     pub connections: Vec<NetworkConnectionPayload>,
+    pub dns_queries: Vec<network_monitor::DnsQuery>,
     pub dns_servers: Vec<String>,
 }
 
@@ -88,7 +89,14 @@ pub struct NetworkConnectionPayload {
     pub local: String,
     pub remote: String,
     pub state: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub process: Option<String>,
 }
+
+/// Max connections reported per snapshot; the server keeps the newest 200.
+const MAX_CONNECTIONS: usize = 200;
 
 /// Continuously collect audit data and POST it to the configured endpoint every `interval_secs`.
 ///
@@ -215,13 +223,26 @@ fn build_payload(
             connections: network
                 .connections
                 .into_iter()
-                .map(|c| NetworkConnectionPayload {
-                    proto: c.protocol,
-                    local: c.local_addr,
-                    remote: c.remote_addr.unwrap_or_default(),
-                    state: c.state.unwrap_or_default(),
+                .take(MAX_CONNECTIONS)
+                .map(|c| {
+                    let proto = c.protocol.to_lowercase();
+                    // UDP is connectionless: report an empty state.
+                    let state = if proto == "udp" {
+                        String::new()
+                    } else {
+                        c.state.unwrap_or_default()
+                    };
+                    NetworkConnectionPayload {
+                        proto,
+                        local: c.local_addr,
+                        remote: c.remote_addr.unwrap_or_default(),
+                        state,
+                        pid: c.pid,
+                        process: c.process_name,
+                    }
                 })
                 .collect(),
+            dns_queries: network.dns_queries,
             dns_servers: network.dns_servers,
         }),
     }
@@ -260,6 +281,136 @@ mod tests {
         assert_eq!(
             build_endpoint("http://localhost:8000/other"),
             "http://localhost:8000/other/audit_ready/telemetry"
+        );
+    }
+
+    #[test]
+    fn payload_serializes_connection_attribution_and_dns_queries() {
+        let report = AuditReport {
+            hostname: "host1".to_string(),
+            os: "linux".to_string(),
+            os_version: "Ubuntu 22.04".to_string(),
+            scanned_at: Utc::now(),
+            software_count: 0,
+            software: vec![],
+        };
+        let network = NetworkSnapshot {
+            interfaces: vec![],
+            connections: vec![
+                network_monitor::NetworkConnection {
+                    protocol: "TCP".to_string(),
+                    local_addr: "192.168.1.5:51234".to_string(),
+                    remote_addr: Some("142.250.72.14:443".to_string()),
+                    state: Some("ESTAB".to_string()),
+                    pid: Some(4821),
+                    process_name: Some("firefox".to_string()),
+                },
+                network_monitor::NetworkConnection {
+                    protocol: "UDP".to_string(),
+                    local_addr: "192.168.1.5:55321".to_string(),
+                    remote_addr: Some("192.168.1.1:53".to_string()),
+                    state: Some("UNCONN".to_string()),
+                    pid: None,
+                    process_name: None,
+                },
+            ],
+            dns_servers: vec!["192.168.1.1".to_string()],
+            dns_queries: vec![network_monitor::DnsQuery {
+                ts_ms: 1784307600000,
+                domain: "example.com".to_string(),
+                qtype: "A".to_string(),
+                answers: vec!["93.184.216.34".to_string()],
+                resolver: "192.168.1.1".to_string(),
+                pid: None,
+                process: None,
+            }],
+            captured_at: Utc::now(),
+        };
+
+        let payload = build_payload(report, vec![], network);
+        let json = serde_json::to_value(&payload).unwrap();
+        let nt = &json["network_traffic"];
+
+        // TCP entry: lowercase proto, attribution present.
+        let tcp = &nt["connections"][0];
+        assert_eq!(tcp["proto"], "tcp");
+        assert_eq!(tcp["state"], "ESTAB");
+        assert_eq!(tcp["pid"], 4821);
+        assert_eq!(tcp["process"], "firefox");
+
+        // UDP entry: empty state, pid/process omitted entirely.
+        let udp = &nt["connections"][1];
+        assert_eq!(udp["proto"], "udp");
+        assert_eq!(udp["state"], "");
+        assert!(udp.get("pid").is_none());
+        assert!(udp.get("process").is_none());
+
+        // DNS query entry matches the wire schema.
+        let q = &nt["dns_queries"][0];
+        assert_eq!(q["ts_ms"], 1784307600000i64);
+        assert_eq!(q["domain"], "example.com");
+        assert_eq!(q["qtype"], "A");
+        assert_eq!(q["answers"][0], "93.184.216.34");
+        assert_eq!(q["resolver"], "192.168.1.1");
+        assert!(q.get("pid").is_none());
+
+        assert_eq!(nt["dns_servers"][0], "192.168.1.1");
+    }
+
+    #[test]
+    fn payload_serializes_empty_dns_queries_when_capture_unavailable() {
+        let report = AuditReport {
+            hostname: "host1".to_string(),
+            os: "linux".to_string(),
+            os_version: "Ubuntu 22.04".to_string(),
+            scanned_at: Utc::now(),
+            software_count: 0,
+            software: vec![],
+        };
+        let network = NetworkSnapshot {
+            interfaces: vec![],
+            connections: vec![],
+            dns_servers: vec![],
+            dns_queries: vec![],
+            captured_at: Utc::now(),
+        };
+        let payload = build_payload(report, vec![], network);
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["network_traffic"]["dns_queries"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn payload_caps_connections_at_200() {
+        let report = AuditReport {
+            hostname: "host1".to_string(),
+            os: "linux".to_string(),
+            os_version: "Ubuntu 22.04".to_string(),
+            scanned_at: Utc::now(),
+            software_count: 0,
+            software: vec![],
+        };
+        let connections = (0..250)
+            .map(|i| network_monitor::NetworkConnection {
+                protocol: "TCP".to_string(),
+                local_addr: format!("10.0.0.1:{}", 10000 + i),
+                remote_addr: None,
+                state: Some("ESTAB".to_string()),
+                pid: Some(1),
+                process_name: Some("init".to_string()),
+            })
+            .collect();
+        let network = NetworkSnapshot {
+            interfaces: vec![],
+            connections,
+            dns_servers: vec![],
+            dns_queries: vec![],
+            captured_at: Utc::now(),
+        };
+        let payload = build_payload(report, vec![], network);
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(
+            json["network_traffic"]["connections"].as_array().unwrap().len(),
+            MAX_CONNECTIONS
         );
     }
 }

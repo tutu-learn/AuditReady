@@ -71,6 +71,10 @@ if [ -f "$TMP_DIR/auditready/restart.sh" ]; then
     install -m 755 "$TMP_DIR/auditready/restart.sh" "$INSTALL_DIR/auditready-restart"
     echo "Installed auditready-restart to ${INSTALL_DIR}/auditready-restart"
 fi
+if [ -f "$TMP_DIR/auditready/update.sh" ]; then
+    install -m 755 "$TMP_DIR/auditready/update.sh" "$INSTALL_DIR/auditready-update"
+    echo "Installed auditready-update to ${INSTALL_DIR}/auditready-update"
+fi
 
 # Prepare config directory.
 mkdir -p "$CONFIG_DIR"
@@ -155,6 +159,7 @@ if systemctl restart auditready.service; then
     echo "  Status:  systemctl status auditready"
     echo "  Logs:    journalctl -u auditready -f"
     echo "  Restart: auditready-restart"
+    echo "  Update:  auditready-update"
 else
     echo ""
     echo "AuditReady is installed but failed to start. Check the logs:"

@@ -117,6 +117,13 @@ journalctl -u auditready -f
 # Restart
 sudo auditready-restart
 
+# Update to the latest release (keeps your config, restarts the service)
+sudo auditready-update
+# or fetch the script directly:
+wget -q https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/update.sh
+chmod +x update.sh
+sudo ./update.sh            # or: sudo VERSION=<tag> ./update.sh
+
 # Update the agent token
 wget -q https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/update-token.sh
 chmod +x update-token.sh
