@@ -26,7 +26,9 @@ curl -fsSL https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/
 The installer will:
 
 - Detect your architecture (`x86_64` or `aarch64`) and download the latest
-  release binary. Prebuilt Linux releases currently ship `x86_64` only.
+  release binary. The Linux binary is statically linked (musl), so it runs on
+  any distribution regardless of glibc version. Prebuilt Linux releases
+  currently ship `x86_64` only.
 - Install `auditready` and the `auditready-restart` helper to `/usr/local/bin`.
 - Prompt for the backend domain and agent token, and write the configuration
   to `/etc/auditready/appsettings.json` (mode `600`).

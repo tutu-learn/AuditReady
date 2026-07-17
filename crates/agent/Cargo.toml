@@ -35,3 +35,7 @@ windows = { version = "0.58", features = [
     "Win32_Security",
     "Win32_System_Threading",
 ]}
+
+# Static musl builds need OpenSSL compiled from source (no system libssl).
+[target.'cfg(all(target_os = "linux", target_env = "musl"))'.dependencies]
+native-tls = { version = "0.2", features = ["vendored"] }

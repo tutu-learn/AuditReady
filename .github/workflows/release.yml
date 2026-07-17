@@ -17,7 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
+          - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             archive: tar.gz
             binary: auditready
@@ -48,8 +48,15 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
+      - name: Install musl toolchain (Linux)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }} --bin auditready
+        env:
+          # Cross-link C dependencies (vendored OpenSSL) with musl-gcc.
+          CC_x86_64_unknown_linux_musl: musl-gcc
 
       - name: Strip binary (Unix)
         if: matrix.os != 'windows-latest'

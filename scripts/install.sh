@@ -31,10 +31,10 @@ fi
 ARCH=$(uname -m)
 case "$ARCH" in
     x86_64)
-        TARGET="x86_64-unknown-linux-gnu"
+        TARGET="x86_64-unknown-linux-musl"
         ;;
     aarch64 | arm64)
-        TARGET="aarch64-unknown-linux-gnu"
+        TARGET="aarch64-unknown-linux-musl"
         ;;
     *)
         echo "Unsupported architecture: $ARCH" >&2
@@ -146,10 +146,10 @@ EOF
 chmod 644 "$SERVICE_FILE"
 echo "Created systemd service at ${SERVICE_FILE}"
 
-# Reload, enable and start.
+# Reload, enable and (re)start. Restart so re-runs apply an updated binary.
 systemctl daemon-reload
 systemctl enable auditready.service
-if systemctl start auditready.service; then
+if systemctl restart auditready.service; then
     echo ""
     echo "AuditReady is installed and running."
     echo "  Status:  systemctl status auditready"
