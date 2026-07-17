@@ -31,6 +31,19 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    // --print-dns: capture live DNS traffic for a few seconds, print the
+    // captured queries as JSON, then exit. Requires root (packet capture).
+    if args.iter().any(|a| a == "--print-dns") {
+        let capture = network_monitor::DnsCapture::start();
+        // Give the capture thread a moment to attach before traffic arrives.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        println!("Capturing DNS traffic for 10 seconds (generate some lookups)...");
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        let queries = capture.drain();
+        println!("{}", serde_json::to_string_pretty(&queries)?);
+        return Ok(());
+    }
+
     // --software: print the full inventory and exit
     if args.iter().any(|a| a == "--software") {
         let report = collector::collect()?;

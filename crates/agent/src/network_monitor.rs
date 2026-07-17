@@ -1812,6 +1812,11 @@ mod live_tests {
         std::thread::sleep(std::time::Duration::from_secs(2));
 
         let queries = capture.drain();
+        // Visible with --nocapture: show exactly what was captured.
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&queries).unwrap_or_default()
+        );
         assert!(
             queries.iter().any(|q| q.domain == "example.com"),
             "expected example.com in captured queries: {:?}",
