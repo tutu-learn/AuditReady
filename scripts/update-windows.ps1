@@ -4,7 +4,7 @@
     Update an existing AuditReady installation to the latest (or a given) release.
 
 .DESCRIPTION
-    Keeps the existing configuration and Windows service; only replaces the
+    Keeps the existing configuration and scheduled task; only replaces the
     binary and helper scripts.
 
 .PARAMETER Version
@@ -16,8 +16,8 @@
 .PARAMETER ConfigDir
     Directory containing appsettings.json (default: C:\ProgramData\AuditReady).
 
-.PARAMETER ServiceName
-    Name of the Windows service (default: AuditReady).
+.PARAMETER TaskName
+    Name of the scheduled task (default: AuditReady).
 
 .EXAMPLE
     .\update-windows.ps1
@@ -29,7 +29,7 @@ param(
     [string]$Version = "latest",
     [string]$InstallDir = "C:\Program Files\AuditReady",
     [string]$ConfigDir = "C:\ProgramData\AuditReady",
-    [string]$ServiceName = "AuditReady"
+    [string]$TaskName = "AuditReady"
 )
 
 $ErrorActionPreference = "Stop"
@@ -66,10 +66,10 @@ try {
     Expand-Archive -Path $ZipPath -DestinationPath $TmpDir -Force
     $ExtractedDir = Join-Path $TmpDir "auditready"
 
-    # Stop the service before replacing the running executable.
-    $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-    if ($service) {
-        Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+    # Stop the scheduled task before replacing the running executable.
+    $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($task) {
+        Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     }
 
     # Update binary.
@@ -87,17 +87,17 @@ try {
         }
     }
 
-    # Ensure config directory exists (the service needs it).
+    # Ensure config directory exists.
     New-Item -ItemType Directory -Path $ConfigDir -Force | Out-Null
 
-    # Start the service again.
-    if ($service) {
-        Start-Service -Name $ServiceName
+    # Start the scheduled task again.
+    if ($task) {
+        Start-ScheduledTask -TaskName $TaskName
         Write-Host ""
         Write-Host "AuditReady $Version is installed and running."
-        Write-Host "  Status: Get-Service $ServiceName"
+        Write-Host "  Status: Get-ScheduledTaskInfo $TaskName"
     } else {
-        Write-Host "No $ServiceName service found; binary updated. Start the agent manually."
+        Write-Host "No $TaskName task found; binary updated. Start the agent manually."
     }
 } finally {
     Remove-Item -Path $TmpDir -Recurse -Force -ErrorAction SilentlyContinue

@@ -130,25 +130,44 @@ try {
     } | ConvertTo-Json -Depth 10 | Out-File -FilePath $ConfigPath -Encoding utf8
     Write-Host "Wrote configuration to $ConfigPath"
 
-    # Create or recreate the service so re-runs apply an updated binary/config.
-    $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-    if ($existing) {
+    # Create or recreate a scheduled task so re-runs apply an updated binary/config.
+    # A scheduled task is used instead of a Windows service because auditready.exe
+    # is a regular console application.
+    $existingTask = Get-ScheduledTask -TaskName $ServiceName -ErrorAction SilentlyContinue
+    if ($existingTask) {
+        Stop-ScheduledTask -TaskName $ServiceName -ErrorAction SilentlyContinue
+        Unregister-ScheduledTask -TaskName $ServiceName -Confirm:$false -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 1
+    }
+
+    # Clean up any stale Windows service from an earlier install attempt.
+    $existingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($existingService) {
         Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
         & sc.exe delete $ServiceName | Out-Null
         Start-Sleep -Seconds 1
     }
 
-    $BinaryPath = "`"$InstallDir\auditready.exe`" --config `"$ConfigPath`""
-    New-Service -Name $ServiceName `
-        -BinaryPathName $BinaryPath `
-        -DisplayName "AuditReady Agent" `
-        -StartupType Automatic `
-        -Description "AuditReady endpoint agent" | Out-Null
+    $action = New-ScheduledTaskAction -Execute (Join-Path $InstallDir "auditready.exe") `
+        -Argument "--config `"$ConfigPath`""
+    $trigger = New-ScheduledTaskTrigger -AtStartup
+    $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" `
+        -LogonType ServiceAccount -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable `
+        -MultipleInstances IgnoreNew `
+        -RestartCount 3 `
+        -RestartInterval (New-TimeSpan -Minutes 1)
 
-    Start-Service -Name $ServiceName
+    Register-ScheduledTask -TaskName $ServiceName `
+        -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+
+    Start-ScheduledTask -TaskName $ServiceName
     Write-Host ""
     Write-Host "AuditReady is installed and running."
-    Write-Host "  Status:       Get-Service $ServiceName"
+    Write-Host "  Status:       Get-ScheduledTaskInfo $ServiceName"
     Write-Host "  Restart:      & `"$InstallDir\restart-windows.ps1`""
     Write-Host "  Update token: & `"$InstallDir\update-token-windows.ps1`" <token>"
 } finally {

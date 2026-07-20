@@ -1,25 +1,28 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Restart the AuditReady agent Windows service.
+    Restart the AuditReady agent scheduled task.
 
-.PARAMETER ServiceName
-    Name of the Windows service (default: AuditReady).
+.PARAMETER TaskName
+    Name of the scheduled task (default: AuditReady).
 
 .EXAMPLE
     .\restart-windows.ps1
 #>
 param(
-    [string]$ServiceName = "AuditReady"
+    [string]$TaskName = "AuditReady"
 )
 
 $ErrorActionPreference = "Stop"
 
-$service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-if (-not $service) {
-    throw "Service $ServiceName not found. Is AuditReady installed?"
+$task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+if (-not $task) {
+    throw "Scheduled task $TaskName not found. Is AuditReady installed?"
 }
 
-Restart-Service -Name $ServiceName -Force
+Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
+Start-ScheduledTask -TaskName $TaskName
+
 Write-Host "AuditReady restarted successfully."
-Write-Host "  Status: Get-Service $ServiceName"
+Write-Host "  Status: Get-ScheduledTaskInfo $TaskName"

@@ -59,7 +59,7 @@ journalctl -u auditready -f
 
 ### Windows
 
-The installer must run as Administrator because it creates a Windows service.
+The installer must run as Administrator because it creates a scheduled task.
 
 Download and run the installer from an elevated PowerShell window:
 
@@ -82,7 +82,7 @@ normalized to a bare host. The installer will:
 - Download the latest `auditready-x86_64-pc-windows-msvc.zip` release.
 - Install `auditready.exe` to `C:\Program Files\AuditReady`.
 - Write configuration to `C:\ProgramData\AuditReady\appsettings.json`.
-- Create and start the `AuditReady` Windows service.
+- Create and start the `AuditReady` scheduled task (runs at startup as `SYSTEM`).
 
 To install a specific release:
 
@@ -202,10 +202,13 @@ The helper scripts are installed next to the binary at
 `C:\Program Files\AuditReady`. Run them from an elevated PowerShell window.
 
 ```powershell
+# Status
+Get-ScheduledTaskInfo AuditReady
+
 # Restart
 & "C:\Program Files\AuditReady\restart-windows.ps1"
 
-# Update to the latest release (keeps your config, restarts the service)
+# Update to the latest release (keeps your config, restarts the task)
 & "C:\Program Files\AuditReady\update-windows.ps1"
 # or fetch the script directly:
 Invoke-WebRequest `
@@ -235,8 +238,7 @@ sudo rm -rf /etc/auditready
 Run from an elevated PowerShell window:
 
 ```powershell
-Stop-Service -Name AuditReady -Force
-& sc.exe delete AuditReady
+Unregister-ScheduledTask -TaskName AuditReady -Confirm:$false
 Remove-Item -Path "C:\Program Files\AuditReady" -Recurse -Force
 Remove-Item -Path "C:\ProgramData\AuditReady" -Recurse -Force
 ```

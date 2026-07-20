@@ -4,8 +4,8 @@
     Update the agent token of an existing AuditReady installation.
 
 .DESCRIPTION
-    Rewrites server.token in appsettings.json and restarts the service so the
-    new token is used immediately.
+    Rewrites server.token in appsettings.json and restarts the scheduled task
+    so the new token is used immediately.
 
 .PARAMETER Token
     New agent token. If omitted, you will be prompted interactively.
@@ -13,8 +13,8 @@
 .PARAMETER ConfigDir
     Directory containing appsettings.json (default: C:\ProgramData\AuditReady).
 
-.PARAMETER ServiceName
-    Name of the Windows service (default: AuditReady).
+.PARAMETER TaskName
+    Name of the scheduled task (default: AuditReady).
 
 .EXAMPLE
     .\update-token-windows.ps1 abc123
@@ -27,7 +27,7 @@ param(
     [string]$Token,
 
     [string]$ConfigDir = "C:\ProgramData\AuditReady",
-    [string]$ServiceName = "AuditReady"
+    [string]$TaskName = "AuditReady"
 )
 
 $ErrorActionPreference = "Stop"
@@ -62,11 +62,13 @@ $config | ConvertTo-Json -Depth 10 | Out-File -FilePath $ConfigPath -Encoding ut
 Write-Host "Updated token in $ConfigPath (backup at ${ConfigPath}.bak)"
 
 # Restart the agent so it picks up the new token.
-$service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-if ($service) {
-    Restart-Service -Name $ServiceName -Force
-    Write-Host "Restarted $ServiceName."
-    Write-Host "  Status: Get-Service $ServiceName"
+$task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+if ($task) {
+    Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+    Start-ScheduledTask -TaskName $TaskName
+    Write-Host "Restarted $TaskName."
+    Write-Host "  Status: Get-ScheduledTaskInfo $TaskName"
 } else {
     Write-Host "Restart the agent manually to apply the new token."
 }
