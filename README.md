@@ -63,11 +63,17 @@ The installer must run as Administrator because it creates a Windows service.
 
 Download and run the installer from an elevated PowerShell window:
 
+**One-line install** (paste into an elevated PowerShell window; the installer
+will prompt for domain and token):
+
 ```powershell
-Invoke-WebRequest `
-  -Uri https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/install-windows.ps1 `
-  -OutFile install-windows.ps1
-.\install-windows.ps1 -Domain api.example.com -Token abc123
+irm https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/install-windows.ps1 -OutFile $env:TEMP\install-ar.ps1; & $env:TEMP\install-ar.ps1
+```
+
+Or pass the values directly:
+
+```powershell
+irm https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/install-windows.ps1 -OutFile $env:TEMP\install-ar.ps1; & $env:TEMP\install-ar.ps1 -Domain api.example.com -Token abc123
 ```
 
 `Domain` also accepts a full URL (`-Url https://api.example.com`) and is

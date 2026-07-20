@@ -34,11 +34,9 @@
     .\install-windows.ps1 -Url https://api.example.com -Token abc123 -Version v1.2.3
 #>
 param(
-    [Parameter(Mandatory = $true)]
     [Alias("Url")]
     [string]$Domain,
 
-    [Parameter(Mandatory = $true)]
     [string]$Token,
 
     [string]$Version = "latest",
@@ -51,6 +49,22 @@ $ErrorActionPreference = "Stop"
 
 $Repo = "tutu-learn/AuditReady"
 $Target = "x86_64-pc-windows-msvc"
+
+# Prompt interactively if values were not passed as parameters.
+if (-not $Domain) {
+    $Domain = Read-Host "Backend domain or URL (e.g. api.example.com or localhost:8000)"
+    if (-not $Domain) {
+        throw "A backend domain is required."
+    }
+}
+if (-not $Token) {
+    $secure = Read-Host "Agent token" -AsSecureString
+    $Token = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
+        [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
+    if (-not $Token) {
+        throw "An agent token is required."
+    }
+}
 
 # Normalize a pasted URL down to a bare domain.
 $Domain = $Domain -replace '^https?://', '' -replace '/$', ''
