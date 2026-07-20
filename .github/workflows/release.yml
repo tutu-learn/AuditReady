@@ -86,6 +86,12 @@ jobs:
         if: matrix.os != 'ubuntu-latest'
         shell: bash
         run: |
+          if [ "${{ matrix.target }}" = "x86_64-pc-windows-msvc" ]; then
+            cp scripts/install-windows.ps1 dist/auditready/
+            cp scripts/restart-windows.ps1 dist/auditready/
+            cp scripts/update-token-windows.ps1 dist/auditready/
+            cp scripts/update-windows.ps1 dist/auditready/
+          fi
           cd dist
           7z a ../auditready-${{ matrix.target }}.zip auditready
 

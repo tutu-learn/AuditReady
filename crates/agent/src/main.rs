@@ -15,12 +15,28 @@ async fn main() -> Result<()> {
 
     let args: Vec<String> = std::env::args().collect();
 
+    // Parse a subset of CLI arguments manually to avoid adding a dependency.
+    let mut config_path: Option<String> = None;
+    let mut i = 1;
+    while i < args.len() {
+        if args[i] == "--config" && i + 1 < args.len() {
+            config_path = Some(args[i + 1].clone());
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+
     // Load appsettings.json if present; otherwise use defaults.
+    // A --config argument overrides the default file path.
     // Environment variables override config file values.
-    let mut settings = if std::path::Path::new("appsettings.json").exists() {
-        config::load("appsettings.json")?
-    } else {
-        config::AppSettings::default()
+    let mut settings = match config_path {
+        Some(path) if std::path::Path::new(&path).exists() => config::load(&path)?,
+        Some(_) => config::AppSettings::default(),
+        None if std::path::Path::new("appsettings.json").exists() => {
+            config::load("appsettings.json")?
+        }
+        None => config::AppSettings::default(),
     };
     settings.apply_env_overrides();
 
