@@ -121,6 +121,31 @@ fn build_broker_url(domain: &str) -> String {
 /// so the application can run without a configuration file.
 pub fn load<P: AsRef<Path>>(path: P) -> anyhow::Result<AppSettings> {
     let content = std::fs::read_to_string(path)?;
-    let settings = serde_json::from_str(&content)?;
+    // Windows PowerShell 5.1 writes UTF-8 with a BOM by default; strip it
+    // because serde_json rejects a leading BOM.
+    let content = content.trim_start_matches('\u{feff}');
+    let settings = serde_json::from_str(content)?;
     Ok(settings)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn loads_config_with_utf8_bom() {
+        let mut path = std::env::temp_dir();
+        path.push(format!("auditready-bom-test-{}.json", std::process::id()));
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(b"\xef\xbb\xbf{\"server\":{\"domain\":\"api.example.com\",\"token\":\"t\"}}")
+            .unwrap();
+        drop(file);
+
+        let settings = load(&path).unwrap();
+        assert_eq!(settings.server.domain.as_deref(), Some("api.example.com"));
+        assert_eq!(settings.server.token.as_deref(), Some("t"));
+
+        std::fs::remove_file(&path).ok();
+    }
 }

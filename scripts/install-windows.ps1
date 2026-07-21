@@ -118,7 +118,7 @@ try {
 
     # Write configuration.
     $ConfigPath = Join-Path $ConfigDir "appsettings.json"
-    @{
+    $configJson = @{
         server = @{
             domain           = $Domain
             token            = $Token
@@ -127,7 +127,10 @@ try {
             tunnel_shell     = $null
             tunnel_cwd       = $ConfigDir
         }
-    } | ConvertTo-Json -Depth 10 | Out-File -FilePath $ConfigPath -Encoding utf8
+    } | ConvertTo-Json -Depth 10
+    # Write UTF-8 without BOM: Out-File -Encoding utf8 adds a BOM on
+    # Windows PowerShell 5.1, which the agent's JSON parser rejects.
+    [System.IO.File]::WriteAllText($ConfigPath, $configJson, (New-Object System.Text.UTF8Encoding $false))
     Write-Host "Wrote configuration to $ConfigPath"
 
     # Create or recreate a scheduled task so re-runs apply an updated binary/config.

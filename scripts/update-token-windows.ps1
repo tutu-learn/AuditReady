@@ -57,7 +57,10 @@ if (-not $config.server) {
     $config | Add-Member -NotePropertyName server -NotePropertyValue @{}
 }
 $config.server.token = $Token
-$config | ConvertTo-Json -Depth 10 | Out-File -FilePath $ConfigPath -Encoding utf8
+$configJson = $config | ConvertTo-Json -Depth 10
+# Write UTF-8 without BOM: Out-File -Encoding utf8 adds a BOM on
+# Windows PowerShell 5.1, which the agent's JSON parser rejects.
+[System.IO.File]::WriteAllText($ConfigPath, $configJson, (New-Object System.Text.UTF8Encoding $false))
 
 Write-Host "Updated token in $ConfigPath (backup at ${ConfigPath}.bak)"
 
