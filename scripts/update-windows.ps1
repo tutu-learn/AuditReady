@@ -72,6 +72,26 @@ try {
         Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     }
 
+    # Stopping the task is asynchronous and best-effort: kill any lingering
+    # agent processes, then wait for the file lock on the executable to be
+    # released before overwriting it.
+    Get-Process -Name "auditready" -ErrorAction SilentlyContinue |
+        Stop-Process -Force -ErrorAction SilentlyContinue
+    $unlocked = $false
+    for ($i = 0; $i -lt 15; $i++) {
+        try {
+            $stream = [System.IO.File]::Open($BinaryPath, 'Open', 'ReadWrite', 'None')
+            $stream.Close()
+            $unlocked = $true
+            break
+        } catch {
+            Start-Sleep -Seconds 1
+        }
+    }
+    if (-not $unlocked) {
+        throw "$BinaryPath is still locked by another process after 15s."
+    }
+
     # Update binary.
     Copy-Item -Path (Join-Path $ExtractedDir "auditready.exe") `
         -Destination $BinaryPath -Force
