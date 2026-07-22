@@ -1,8 +1,9 @@
 //! Patch job polling and execution.
 //!
 //! Polls `POST /audit_ready/agent/poll`, executes patch jobs one at a time
-//! with the platform package manager, and reports progress/results to
-//! `POST /audit_ready/agent/patch-result`.
+//! — Package Update / OS Update via the platform package manager, Script jobs
+//! by running the bash script carried in `package` — and reports
+//! progress/results to `POST /audit_ready/agent/patch-result`.
 //!
 //! Job delivery is at-least-once: a server restart can re-deliver a completed
 //! job. A small on-disk state file (`patch-state.json`) records completed
@@ -27,6 +28,13 @@ const SUMMARY_CAP: usize = 1000;
 /// If a reboot doesn't happen within this long after being requested
 /// (e.g. it was cancelled), verify and close the job anyway.
 const REBOOT_STALL: Duration = Duration::from_secs(900);
+/// Max wall-clock time for a Script job before it is killed
+/// (kubeadm upgrades download packages, so keep this generous).
+const SCRIPT_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+/// Interval between progress pings while a Script job runs.
+const SCRIPT_PING_INTERVAL: Duration = Duration::from_secs(30);
+/// Cap for the script output tail sent as `output` (the server caps at 64000).
+const OUTPUT_CAP: usize = 60000;
 
 // ── Wire types ──────────────────────────────────────────────────────────────
 
@@ -66,6 +74,9 @@ struct CompletedJob {
     status: String,
     result: String,
     error: String,
+    /// Output tail for Script jobs; empty for package/OS jobs.
+    #[serde(default)]
+    output: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,13 +116,14 @@ impl State {
         }
     }
 
-    fn record_completed(&mut self, name: &str, status: &str, result: &str, error: &str) {
+    fn record_completed(&mut self, name: &str, status: &str, result: &str, error: &str, output: &str) {
         self.completed.retain(|c| c.name != name);
         self.completed.push(CompletedJob {
             name: name.to_string(),
             status: status.to_string(),
             result: result.to_string(),
             error: error.to_string(),
+            output: output.to_string(),
         });
         if self.completed.len() > MAX_COMPLETED {
             let excess = self.completed.len() - MAX_COMPLETED;
@@ -205,6 +217,7 @@ impl Client {
         progress: Option<u32>,
         result: Option<&str>,
         error: Option<&str>,
+        output: Option<&str>,
     ) -> anyhow::Result<()> {
         let mut body = serde_json::json!({ "name": name, "status": status });
         if let Some(p) = progress {
@@ -215,6 +228,9 @@ impl Client {
         }
         if let Some(e) = error {
             body["error"] = e.into();
+        }
+        if let Some(o) = output.filter(|o| !o.is_empty()) {
+            body["output"] = o.into();
         }
 
         let mut last_err = anyhow!("no attempts made");
@@ -240,15 +256,23 @@ impl Client {
 
     /// Best-effort progress ping; failures are logged, never fatal.
     fn progress(&self, name: &str, progress: u32) {
-        if let Err(e) = self.report(name, "Running", Some(progress), None, None) {
+        if let Err(e) = self.report(name, "Running", Some(progress), None, None, None) {
             tracing::warn!("progress ping for {} failed: {}", name, e);
         }
     }
 
     /// Terminal report; retried internally, and once more by the caller's
     /// caller via the completed-record re-report path if it ultimately fails.
-    fn terminal(&self, name: &str, status: &str, result: &str, error: &str) -> anyhow::Result<()> {
-        self.report(name, status, None, Some(result), Some(error))
+    /// `output` is the Script-job output tail; `None`/empty for other types.
+    fn terminal(
+        &self,
+        name: &str,
+        status: &str,
+        result: &str,
+        error: &str,
+        output: Option<&str>,
+    ) -> anyhow::Result<()> {
+        self.report(name, status, None, Some(result), Some(error), output)
     }
 }
 
@@ -341,7 +365,13 @@ fn handle_job(client: &Client, state: &mut State, state_path: &PathBuf, job: Job
     // status (idempotent on the server), never reinstall.
     if let Some(done) = state.completed_job(&job.name).cloned() {
         tracing::info!("job {} re-delivered after completion; re-reporting", job.name);
-        if let Err(e) = client.terminal(&done.name, &done.status, &done.result, &done.error) {
+        if let Err(e) = client.terminal(
+            &done.name,
+            &done.status,
+            &done.result,
+            &done.error,
+            Some(&done.output),
+        ) {
             tracing::error!("re-report for {} failed: {}", done.name, e);
         }
         return;
@@ -367,20 +397,6 @@ fn execute_job(client: &Client, state: &mut State, state_path: &PathBuf, job: Jo
         state.save(state_path);
     }
 
-    // Script jobs are reserved; fail loudly instead of ignoring them.
-    if job.job_type == "Script" {
-        finish(
-            client,
-            state,
-            state_path,
-            &job,
-            "Failed",
-            "",
-            "script jobs not supported by this agent",
-        );
-        return;
-    }
-
     // Honor scheduled_at: wait until the scheduled time before executing.
     if let Some(delay) = scheduled_delay(&job.scheduled_at) {
         tracing::info!("job {} scheduled in {:?}; waiting", job.name, delay);
@@ -389,6 +405,13 @@ fn execute_job(client: &Client, state: &mut State, state_path: &PathBuf, job: Jo
     }
 
     client.progress(&job.name, 10);
+
+    // Script jobs run the bash script in `package` and report by exit code;
+    // they don't go through package verification or reboot handling.
+    if job.job_type == "Script" {
+        execute_script_job(client, state, state_path, &job);
+        return;
+    }
 
     let install = match job.job_type.as_str() {
         "Package Update" => exec::package_upgrade(&job.package, &job.to_version),
@@ -411,7 +434,7 @@ fn execute_job(client: &Client, state: &mut State, state_path: &PathBuf, job: Jo
     };
 
     if let Err(e) = install {
-        finish(client, state, state_path, &job, "Failed", "", &format!("{:#}", e));
+        finish(client, state, state_path, &job, "Failed", "", &format!("{:#}", e), None);
         return;
     }
     client.progress(&job.name, 70);
@@ -438,6 +461,7 @@ fn execute_job(client: &Client, state: &mut State, state_path: &PathBuf, job: Jo
                     "Failed",
                     "",
                     &format!("updates installed but reboot failed: {:#}", e),
+                    None,
                 );
             }
         }
@@ -446,15 +470,15 @@ fn execute_job(client: &Client, state: &mut State, state_path: &PathBuf, job: Jo
 
     client.progress(&job.name, 90);
     match verify_outcome(&job) {
-        Ok(summary) => finish(client, state, state_path, &job, "Success", &summary, ""),
-        Err(e) => finish(client, state, state_path, &job, "Failed", "", &format!("{:#}", e)),
+        Ok(summary) => finish(client, state, state_path, &job, "Success", &summary, "", None),
+        Err(e) => finish(client, state, state_path, &job, "Failed", "", &format!("{:#}", e), None),
     }
 }
 
 /// After a reboot (or a stalled reboot): verify the outcome and close the job.
 fn finalize_after_reboot(client: &Client, state: &mut State, state_path: &PathBuf, job: &Job) {
     match verify_outcome(job) {
-        Ok(summary) => finish(client, state, state_path, job, "Success", &summary, ""),
+        Ok(summary) => finish(client, state, state_path, job, "Success", &summary, "", None),
         Err(e) => finish(
             client,
             state,
@@ -463,6 +487,7 @@ fn finalize_after_reboot(client: &Client, state: &mut State, state_path: &PathBu
             "Failed",
             "",
             &format!("post-reboot verification failed: {:#}", e),
+            None,
         ),
     }
 }
@@ -484,6 +509,8 @@ fn verify_outcome(job: &Job) -> anyhow::Result<String> {
 }
 
 /// Send the terminal report, record the job as completed, clear in-flight.
+/// `output` is the Script-job output tail; `None` for package/OS jobs.
+#[allow(clippy::too_many_arguments)]
 fn finish(
     client: &Client,
     state: &mut State,
@@ -492,10 +519,11 @@ fn finish(
     status: &str,
     result: &str,
     error: &str,
+    output: Option<&str>,
 ) {
-    match client.terminal(&job.name, status, result, error) {
+    match client.terminal(&job.name, status, result, error, output) {
         Ok(()) => {
-            state.record_completed(&job.name, status, result, error);
+            state.record_completed(&job.name, status, result, error, output.unwrap_or(""));
             state.in_flight = None;
             state.save(state_path);
             tracing::info!("job {} finished: {}", job.name, status);
@@ -506,6 +534,228 @@ fn finish(
             tracing::error!("terminal report for {} failed: {}", job.name, e);
         }
     }
+}
+
+// ── Script jobs ─────────────────────────────────────────────────────────────
+
+/// Outcome of a Script job run. `error` is set when the agent itself failed
+/// to run the script (temp file, spawn); `timed_out` when the script was
+/// killed after SCRIPT_TIMEOUT. `output_tail` always carries the last chunk
+/// of combined stdout/stderr — it is the only console visibility operators
+/// have, so it is sent on success and failure alike.
+struct ScriptOutcome {
+    exit_code: Option<i32>,
+    timed_out: bool,
+    error: Option<String>,
+    output_tail: String,
+}
+
+/// Run a Script job: the bash script rides in `job.package`. Reports Done on
+/// exit 0, Failed otherwise; the terminal report always carries the output
+/// tail.
+fn execute_script_job(client: &Client, state: &mut State, state_path: &PathBuf, job: &Job) {
+    if job.package.trim().is_empty() {
+        finish(
+            client,
+            state,
+            state_path,
+            job,
+            "Failed",
+            "",
+            "Script job has no script in `package`",
+            None,
+        );
+        return;
+    }
+
+    let mut pings: u32 = 0;
+    let outcome = run_script(&job.package, || {
+        pings += 1;
+        // Ramp 20 → 90 over the first pings, then hold.
+        client.progress(&job.name, (20 + pings * 10).min(90));
+    });
+
+    let (status, result, error) = if let Some(e) = &outcome.error {
+        ("Failed", String::new(), e.clone())
+    } else if outcome.timed_out {
+        (
+            "Failed",
+            String::new(),
+            format!("script timed out after {} minutes", SCRIPT_TIMEOUT.as_secs() / 60),
+        )
+    } else if outcome.exit_code == Some(0) {
+        ("Done", "script completed".to_string(), String::new())
+    } else {
+        let error = match outcome.exit_code {
+            Some(code) => format!("script exited {}", code),
+            None => "script killed by signal".to_string(),
+        };
+        ("Failed", String::new(), error)
+    };
+    finish(
+        client,
+        state,
+        state_path,
+        job,
+        status,
+        &result,
+        &error,
+        Some(&outcome.output_tail),
+    );
+}
+
+/// Write `script` to a temp file (0700 on unix), run it with `bash`, and
+/// capture combined stdout+stderr. `ping` is called every SCRIPT_PING_INTERVAL
+/// while the script runs. The temp files are always deleted afterwards.
+fn run_script(script: &str, mut ping: impl FnMut()) -> ScriptOutcome {
+    let fail = |outcome: &mut ScriptOutcome, e: anyhow::Error| {
+        tracing::error!("script job failed to run: {:#}", e);
+        outcome.error = Some(format!("{:#}", e));
+    };
+
+    let mut outcome = ScriptOutcome {
+        exit_code: None,
+        timed_out: false,
+        error: None,
+        output_tail: String::new(),
+    };
+
+    let dir = std::env::temp_dir().join("auditready");
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let stamp = format!(
+        "{}-{}-{}",
+        std::process::id(),
+        Utc::now().timestamp_nanos_opt().unwrap_or_default(),
+        COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+    );
+    let script_path = dir.join(format!("script-{}.sh", stamp));
+    let log_path = dir.join(format!("script-{}.log", stamp));
+
+    'run: {
+        if let Err(e) = std::fs::create_dir_all(&dir)
+            .and_then(|_| std::fs::write(&script_path, script))
+            .context("failed to write script temp file")
+        {
+            fail(&mut outcome, e);
+            break 'run;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Err(e) = std::fs::set_permissions(
+                &script_path,
+                std::fs::Permissions::from_mode(0o700),
+            )
+            .context("failed to chmod script temp file")
+            {
+                fail(&mut outcome, e);
+                break 'run;
+            }
+        }
+
+        let log = match std::fs::File::create(&log_path)
+            .and_then(|f| f.try_clone().map(|f2| (f, f2)))
+            .context("failed to create script log file")
+        {
+            Ok((out, err)) => (out, err),
+            Err(e) => {
+                fail(&mut outcome, e);
+                break 'run;
+            }
+        };
+
+        let mut cmd = std::process::Command::new("bash");
+        cmd.arg(&script_path)
+            .stdin(std::process::Stdio::null())
+            .stdout(log.0)
+            .stderr(log.1)
+            // The scripts run apt; never let debconf prompt on a dead stdin.
+            .env("DEBIAN_FRONTEND", "noninteractive");
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            // Own process group, so a timeout kills apt/kubeadm children too.
+            cmd.process_group(0);
+        }
+        let mut child = match cmd.spawn().context("failed to spawn bash") {
+            Ok(c) => c,
+            Err(e) => {
+                fail(&mut outcome, e);
+                break 'run;
+            }
+        };
+
+        let start = std::time::Instant::now();
+        let mut last_ping = std::time::Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    outcome.exit_code = status.code();
+                    break;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    fail(&mut outcome, anyhow::Error::new(e).context("failed to poll script"));
+                    break;
+                }
+            }
+            if start.elapsed() > SCRIPT_TIMEOUT {
+                tracing::error!("script exceeded {:?}; killing it", SCRIPT_TIMEOUT);
+                kill_script(&mut child);
+                let _ = child.wait();
+                outcome.timed_out = true;
+                break;
+            }
+            if last_ping.elapsed() >= SCRIPT_PING_INTERVAL {
+                ping();
+                last_ping = std::time::Instant::now();
+            }
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    }
+
+    if let Ok(bytes) = std::fs::read(&log_path) {
+        outcome.output_tail = tail_chars(&String::from_utf8_lossy(&bytes), OUTPUT_CAP);
+    }
+    if let Err(e) = std::fs::remove_file(&script_path) {
+        tracing::warn!("failed to delete {}: {}", script_path.display(), e);
+    }
+    if let Err(e) = std::fs::remove_file(&log_path) {
+        tracing::warn!("failed to delete {}: {}", log_path.display(), e);
+    }
+    outcome
+}
+
+/// Kill a timed-out script. On unix the script runs in its own process group,
+/// so kill the whole group (bash may have spawned apt, kubeadm, …).
+#[cfg(unix)]
+fn kill_script(child: &mut std::process::Child) {
+    unsafe {
+        libc::kill(-(child.id() as i32), libc::SIGKILL);
+    }
+    let _ = child.kill();
+}
+
+#[cfg(not(unix))]
+fn kill_script(child: &mut std::process::Child) {
+    let _ = child.kill();
+}
+
+/// Keep the last `cap` chars of `text` (char-boundary safe), with a "..."
+/// prefix when truncated.
+fn tail_chars(text: &str, cap: usize) -> String {
+    if text.chars().count() <= cap {
+        return text.to_string();
+    }
+    let tail: String = text
+        .chars()
+        .rev()
+        .take(cap)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    format!("...{}", tail)
 }
 
 // ── Platform execution ──────────────────────────────────────────────────────
@@ -1018,17 +1268,18 @@ mod tests {
     fn completed_record_dedups_and_stays_bounded() {
         let mut state = State::default();
         for i in 0..250 {
-            state.record_completed(&format!("job-{}", i), "Success", "ok", "");
+            state.record_completed(&format!("job-{}", i), "Success", "ok", "", "");
         }
         assert_eq!(state.completed.len(), MAX_COMPLETED);
         // Oldest entries were dropped, newest retained.
         assert!(state.completed_job("job-0").is_none());
         assert!(state.completed_job("job-249").is_some());
 
-        state.record_completed("job-249", "Failed", "", "boom");
+        state.record_completed("job-249", "Failed", "", "boom", "tail of output");
         assert_eq!(state.completed.len(), MAX_COMPLETED);
         let done = state.completed_job("job-249").unwrap();
         assert_eq!(done.status, "Failed");
+        assert_eq!(done.output, "tail of output");
     }
 
     #[test]
@@ -1036,6 +1287,44 @@ mod tests {
         let long = "x".repeat(5000);
         let summary = summarize(long.as_bytes());
         assert!(summary.chars().count() <= SUMMARY_CAP + 4); // "..." prefix
+    }
+
+    #[test]
+    fn tail_chars_keeps_last_chars() {
+        let short = "hello";
+        assert_eq!(tail_chars(short, 100), "hello");
+
+        let long = "x".repeat(OUTPUT_CAP + 100);
+        let tail = tail_chars(&long, OUTPUT_CAP);
+        assert!(tail.starts_with("..."));
+        assert_eq!(tail.chars().count(), OUTPUT_CAP + 3);
+
+        // Multibyte characters must not be split.
+        let wide = "é".repeat(OUTPUT_CAP + 1);
+        let tail = tail_chars(&wide, OUTPUT_CAP);
+        assert_eq!(tail.chars().count(), OUTPUT_CAP + 3);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn script_success_reports_done_and_output() {
+        let outcome = run_script("echo hello-from-script", || {});
+        assert_eq!(outcome.error, None);
+        assert!(!outcome.timed_out);
+        assert_eq!(outcome.exit_code, Some(0));
+        assert!(outcome.output_tail.contains("hello-from-script"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn script_failure_reports_exit_code_and_partial_output() {
+        let outcome = run_script("echo before-failure\necho oops >&2\nexit 3", || {});
+        assert_eq!(outcome.error, None);
+        assert!(!outcome.timed_out);
+        assert_eq!(outcome.exit_code, Some(3));
+        // Combined stdout+stderr is captured.
+        assert!(outcome.output_tail.contains("before-failure"));
+        assert!(outcome.output_tail.contains("oops"));
     }
 
     #[test]
@@ -1056,7 +1345,7 @@ mod tests {
             reboot_pending: true,
             reboot_marked_at: 1784307600,
         });
-        state.record_completed("patch-0", "Success", "openssl 3.0.0 -> 3.0.2", "");
+        state.record_completed("patch-0", "Success", "openssl 3.0.0 -> 3.0.2", "", "");
 
         let dir = std::env::temp_dir().join(format!("auditready-state-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
