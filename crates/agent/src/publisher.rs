@@ -1,9 +1,11 @@
 use crate::collector;
 use crate::models::AuditReport;
 use crate::network_monitor::{self, NetworkSnapshot};
+use crate::pending_updates::{PendingUpdate, PendingUpdatesCache};
 use crate::process_monitor::{self, ProcessEvent, RulesEngine, Verdict};
 use chrono::Utc;
 use serde::Serialize;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -16,6 +18,8 @@ pub struct TelemetryPayload {
     pub os_version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub installed_software: Option<InstalledSoftware>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_updates: Option<Vec<PendingUpdate>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compliance: Option<CompliancePayload>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -102,7 +106,14 @@ const MAX_CONNECTIONS: usize = 200;
 ///
 /// `domain` is the host (and optional port) only; the full path `/audit_ready/telemetry` is appended.
 /// If `token` is supplied, it is sent as `Authorization: Bearer <token>`.
-pub fn run(domain: &str, interval_secs: u64, token: Option<&str>) -> anyhow::Result<()> {
+/// `pending_updates` carries the cached pending-update snapshot; until the
+/// first successful collection it holds `None` and the field is omitted.
+pub fn run(
+    domain: &str,
+    interval_secs: u64,
+    token: Option<&str>,
+    pending_updates: Arc<PendingUpdatesCache>,
+) -> anyhow::Result<()> {
     let engine = RulesEngine::new(
         vec![
             "launchd".into(),
@@ -116,7 +127,7 @@ pub fn run(domain: &str, interval_secs: u64, token: Option<&str>) -> anyhow::Res
     let endpoint = build_endpoint(domain);
 
     loop {
-        match push_snapshot(&engine, &endpoint, token, &dns_capture) {
+        match push_snapshot(&engine, &endpoint, token, &dns_capture, &pending_updates) {
             Ok(()) => println!("[{}] Telemetry posted", Utc::now().format("%Y-%m-%d %H:%M:%S UTC")),
             Err(e) => eprintln!("[{}] Telemetry failed: {}", Utc::now().format("%Y-%m-%d %H:%M:%S UTC"), e),
         }
@@ -145,12 +156,16 @@ fn push_snapshot(
     endpoint: &str,
     token: Option<&str>,
     dns_capture: &network_monitor::DnsCapture,
+    pending_updates: &PendingUpdatesCache,
 ) -> anyhow::Result<()> {
     let report = collector::collect()?;
     let processes = process_monitor::snapshot(engine);
     let network = network_monitor::snapshot(Some(dns_capture));
 
-    let payload = build_payload(report, processes, network);
+    let mut payload = build_payload(report, processes, network);
+    // Present (even empty) once the first collection succeeded; absent before
+    // that, so the server keeps whatever snapshot it already has.
+    payload.pending_updates = pending_updates.snapshot().map(|u| (*u).clone());
     let body = serde_json::to_string(&payload)?;
     let mut request = ureq::post(endpoint)
         .set("Content-Type", "application/json")
@@ -193,6 +208,7 @@ fn build_payload(
                 })
                 .collect(),
         }),
+        pending_updates: None,
         compliance: None,
         running_processes: Some(RunningProcessesPayload {
             total,
@@ -377,6 +393,44 @@ mod tests {
         let payload = build_payload(report, vec![], network);
         let json = serde_json::to_value(&payload).unwrap();
         assert_eq!(json["network_traffic"]["dns_queries"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn payload_omits_pending_updates_until_first_collection() {
+        let report = AuditReport {
+            hostname: "host1".to_string(),
+            os: "linux".to_string(),
+            os_version: "Ubuntu 22.04".to_string(),
+            scanned_at: Utc::now(),
+            software_count: 0,
+            software: vec![],
+        };
+        let network = NetworkSnapshot {
+            interfaces: vec![],
+            connections: vec![],
+            dns_servers: vec![],
+            dns_queries: vec![],
+            captured_at: Utc::now(),
+        };
+        let mut payload = build_payload(report, vec![], network);
+        let json = serde_json::to_value(&payload).unwrap();
+        assert!(json.get("pending_updates").is_none());
+
+        payload.pending_updates = Some(vec![PendingUpdate {
+            id: "openssl".to_string(),
+            title: "openssl 3.0.2-0ubuntu1.25".to_string(),
+            severity: String::new(),
+            source: "apt".to_string(),
+            kb: String::new(),
+        }]);
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["pending_updates"][0]["id"], "openssl");
+        assert_eq!(json["pending_updates"][0]["source"], "apt");
+
+        // An empty list is still serialized — it clears the server snapshot.
+        payload.pending_updates = Some(vec![]);
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["pending_updates"], serde_json::json!([]));
     }
 
     #[test]

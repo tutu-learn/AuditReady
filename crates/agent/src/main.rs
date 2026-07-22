@@ -1,12 +1,15 @@
 mod collector;
 mod config;
+mod jobs;
 mod models;
 mod network_monitor;
+mod pending_updates;
 mod process_monitor;
 mod publisher;
 mod tunnel;
 
 use anyhow::Result;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[tokio::main]
@@ -83,6 +86,13 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    // --print-updates: collect and print pending OS updates as JSON, then exit
+    if args.iter().any(|a| a == "--print-updates") {
+        let updates = pending_updates::collect()?;
+        println!("{}", serde_json::to_string_pretty(&updates)?);
+        return Ok(());
+    }
+
     // Shared backend config is required for either push or tunnel.
     let domain = settings
         .server
@@ -95,14 +105,33 @@ async fn main() -> Result<()> {
         .clone()
         .ok_or_else(|| anyhow::anyhow!("server.token is not configured"))?;
 
+    // Shared cache of pending OS updates, refreshed in the background and
+    // reported with every telemetry snapshot.
+    let pending_cache = Arc::new(pending_updates::PendingUpdatesCache::new());
+    {
+        let cache = pending_cache.clone();
+        std::thread::spawn(move || pending_updates::run_refresher(cache));
+    }
+
     // Push telemetry. Runs in a blocking task because publisher::run is
     // synchronous and loops forever.
     let push_interval = settings.server.interval_seconds;
     let push_domain = domain.clone();
     let push_token = token.clone();
+    let push_cache = pending_cache.clone();
     tokio::task::spawn_blocking(move || {
-        if let Err(e) = publisher::run(&push_domain, push_interval, Some(&push_token)) {
+        if let Err(e) = publisher::run(&push_domain, push_interval, Some(&push_token), push_cache) {
             tracing::error!("telemetry publisher failed: {}", e);
+        }
+    });
+
+    // Poll for and execute patch jobs (package/OS updates queued by the
+    // server). Synchronous loop on its own blocking task.
+    let job_domain = domain.clone();
+    let job_token = token.clone();
+    tokio::task::spawn_blocking(move || {
+        if let Err(e) = jobs::run(&job_domain, &job_token) {
+            tracing::error!("patch job poller failed: {}", e);
         }
     });
 
