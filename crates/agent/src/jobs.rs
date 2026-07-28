@@ -1068,6 +1068,9 @@ mod exec {
     /// Install one KB. Prefers PSWindowsUpdate's Install-WindowsUpdate when
     /// the module is present; otherwise drives WUA via COM. The KB arrives as
     /// an argv element ($args[0]), never interpolated into the script.
+    /// Idempotent: a KB that is already installed (e.g. Windows updated in
+    /// the background) exits 0, so the job finishes Success, not Failed
+    /// (agent contract: already-installed is Done).
     const WUA_INSTALL_SCRIPT: &str = r#"
 $ErrorActionPreference = 'Stop'
 $kb = $args[0] -replace '^KB', ''
@@ -1087,6 +1090,28 @@ foreach ($u in $result.Updates) {
 }
 if ($toInstall.Count -eq 0) {
     if (Get-HotFix -Id "KB$kb" -ErrorAction SilentlyContinue) { exit 0 }
+    # Not offered anymore usually means Windows already installed it in the
+    # background — that is success, not failure (contract: report Done, not
+    # Failed). Get-HotFix only covers CBS, so also search WUA's installed
+    # history before giving up.
+    $installed = $session.CreateUpdateSearcher().Search("IsInstalled=1 and Type='Software'")
+    foreach ($u in $installed.Updates) {
+        foreach ($id in $u.KBArticleIDs) {
+            if ("$id" -eq "$kb") { exit 0 }
+        }
+    }
+    if ($kb -eq '2267602') {
+        # Defender Security Intelligence updates ship through Defender's own
+        # channel, not CBS: they never appear in Get-HotFix, and once Defender
+        # has self-updated, WUA stops offering them. Trigger a signature
+        # update directly and accept fresh signatures as success.
+        $mpcmd = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
+        if (Test-Path $mpcmd) { & $mpcmd -SignatureUpdate | Out-Null }
+        $mp = Get-MpComputerStatus
+        if ($mp.AntivirusSignatureLastUpdated -and $mp.AntivirusSignatureLastUpdated -gt (Get-Date).AddDays(-2)) { exit 0 }
+        Write-Error "Defender signature update failed (last updated $($mp.AntivirusSignatureLastUpdated))"
+        exit 1
+    }
     Write-Error "update KB$kb not found"
     exit 1
 }
@@ -1158,9 +1183,16 @@ if ($r.ResultCode -eq 2) { exit 0 } else { Write-Error "install result code $($r
     }
 
     /// Verify a KB is installed: Get-HotFix first, then a WUA installed-search.
+    /// Defender Security Intelligence updates (KB2267602) bypass CBS entirely,
+    /// so for those any present Defender signature counts as installed.
     const WUA_VERIFY_SCRIPT: &str = r#"
 $kb = $args[0] -replace '^KB', ''
 if (Get-HotFix -Id "KB$kb" -ErrorAction SilentlyContinue) { exit 0 }
+if ($kb -eq '2267602') {
+    $mp = Get-MpComputerStatus
+    if ($mp.AntivirusSignatureLastUpdated) { exit 0 }
+    exit 1
+}
 $session = New-Object -ComObject Microsoft.Update.Session
 $result = $session.CreateUpdateSearcher().Search("IsInstalled=1 and Type='Software'")
 foreach ($u in $result.Updates) {
