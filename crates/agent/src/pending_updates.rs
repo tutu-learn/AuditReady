@@ -204,6 +204,52 @@ pub(crate) mod parse {
             })
             .collect()
     }
+
+    /// Parse `winget upgrade` table output.
+    ///
+    /// Columns are aligned under a header line; rows below the dashed rule
+    /// are sliced by the header's byte offsets. A missing or localized
+    /// header yields an empty list — the collector treats winget as
+    /// best-effort. The row's `Id` (e.g. `7zip.7zip`) becomes the update id,
+    /// which is exactly what `winget upgrade --id --exact` takes later.
+    pub fn winget(output: &str) -> Vec<PendingUpdate> {
+        let lines: Vec<&str> = output.lines().collect();
+        let Some(header_idx) = lines
+            .iter()
+            .position(|l| l.contains("Id") && l.contains("Version") && l.contains("Available"))
+        else {
+            return Vec::new();
+        };
+        let header = lines[header_idx];
+        let id_start = header.find("Id").unwrap();
+        let version_start = header.find("Version").unwrap();
+        let available_start = header.find("Available").unwrap();
+        let source_start = header.find("Source").unwrap_or(header.len());
+
+        lines[header_idx + 1..]
+            .iter()
+            .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('-'))
+            .filter_map(|line| {
+                if line.len() <= available_start {
+                    return None;
+                }
+                let slice = |a: usize, b: usize| line.get(a..b.min(line.len())).unwrap_or("").trim();
+                let id = slice(id_start, version_start);
+                let version = slice(version_start, available_start);
+                let available = slice(available_start, source_start);
+                if id.is_empty() || available.is_empty() {
+                    return None;
+                }
+                Some(PendingUpdate {
+                    id: id.to_string(),
+                    title: format!("{} {} -> {}", id, version, available),
+                    severity: String::new(),
+                    source: "winget".to_string(),
+                    kb: String::new(),
+                })
+            })
+            .collect()
+    }
 }
 
 // ── Platform collectors ─────────────────────────────────────────────────────
@@ -318,7 +364,31 @@ foreach ($u in $result.Updates) {
                 String::from_utf8_lossy(&out.stderr).trim()
             );
         }
-        Ok(parse::windows(&String::from_utf8_lossy(&out.stdout)))
+        let mut updates = parse::windows(&String::from_utf8_lossy(&out.stdout));
+        updates.extend(collect_winget());
+        Ok(updates)
+    }
+
+    /// Available software upgrades from winget. Best-effort: winget missing,
+    /// erroring, or printing a localized table yields an empty list, never a
+    /// failed collection.
+    fn collect_winget() -> Vec<PendingUpdate> {
+        let out = Command::new("winget")
+            .args([
+                "upgrade",
+                "--include-unknown",
+                "--accept-source-agreements",
+                "--disable-interactivity",
+            ])
+            .stdin(Stdio::null())
+            .output();
+        match out {
+            Ok(out) => parse::winget(&String::from_utf8_lossy(&out.stdout)),
+            Err(e) => {
+                tracing::debug!("winget upgrade listing unavailable: {}", e);
+                Vec::new()
+            }
+        }
     }
 }
 
@@ -399,5 +469,36 @@ mod tests {
         assert_eq!(updates[0].source, "windows_update");
         assert_eq!(updates[1].id, "Some driver update");
         assert_eq!(updates[1].kb, "");
+    }
+
+    #[test]
+    fn parses_winget_upgrade_table() {
+        let header = format!(
+            "{:<38}{:<26}{:<13}{:<13}{}",
+            "Name", "Id", "Version", "Available", "Source"
+        );
+        let row1 = format!(
+            "{:<38}{:<26}{:<13}{:<13}{}",
+            "7-Zip 23.01 (x64)", "7zip.7zip", "23.01", "24.05", "winget"
+        );
+        let row2 = format!(
+            "{:<38}{:<26}{:<13}{:<13}{}",
+            "Git", "Git.Git", "2.43.0", "2.44.0", "winget"
+        );
+        let out = format!("{}\n{}\n{}\n{}\n", header, "-".repeat(100), row1, row2);
+        let updates = parse::winget(&out);
+        assert_eq!(updates.len(), 2);
+        // The winget Id is the update id: it feeds `winget upgrade --id --exact`.
+        assert_eq!(updates[0].id, "7zip.7zip");
+        assert_eq!(updates[0].title, "7zip.7zip 23.01 -> 24.05");
+        assert_eq!(updates[0].source, "winget");
+        assert_eq!(updates[0].kb, "");
+        assert_eq!(updates[1].id, "Git.Git");
+    }
+
+    #[test]
+    fn parses_winget_no_upgrades_or_localized_output() {
+        assert!(parse::winget("No applicable upgrade found.\n").is_empty());
+        assert!(parse::winget("").is_empty());
     }
 }

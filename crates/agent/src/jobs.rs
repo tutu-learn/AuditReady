@@ -2,7 +2,8 @@
 //!
 //! Polls `POST /audit_ready/agent/poll`, executes patch jobs one at a time
 //! — Package Update / OS Update via the platform package manager, Script jobs
-//! by running the bash script carried in `package` — and reports
+//! by running the script carried in `package` (bash on unix, PowerShell on
+//! Windows) — and reports
 //! progress/results to `POST /audit_ready/agent/patch-result`.
 //!
 //! Job delivery is at-least-once: a server restart can re-deliver a completed
@@ -550,9 +551,10 @@ struct ScriptOutcome {
     output_tail: String,
 }
 
-/// Run a Script job: the bash script rides in `job.package`. Reports Done on
-/// exit 0, Failed otherwise; the terminal report always carries the output
-/// tail.
+/// Run a Script job: the script rides in `job.package` — a bash script on
+/// unix, a PowerShell script on Windows (e.g. the server-rendered IIS deploy
+/// and config scripts). Reports Done on exit 0, Failed otherwise; the
+/// terminal report always carries the output tail.
 fn execute_script_job(client: &Client, state: &mut State, state_path: &PathBuf, job: &Job) {
     if job.package.trim().is_empty() {
         finish(
@@ -604,9 +606,25 @@ fn execute_script_job(client: &Client, state: &mut State, state_path: &PathBuf, 
     );
 }
 
-/// Write `script` to a temp file (0700 on unix), run it with `bash`, and
-/// capture combined stdout+stderr. `ping` is called every SCRIPT_PING_INTERVAL
-/// while the script runs. The temp files are always deleted afterwards.
+/// Bytes written to the script temp file. Windows PowerShell 5.1 reads a
+/// BOM-less .ps1 as ANSI, mangling any non-ASCII; prefix a UTF-8 BOM so both
+/// 5.1 and 7+ decode the file as UTF-8.
+#[cfg(windows)]
+fn script_file_bytes(script: &str) -> Vec<u8> {
+    let mut bytes = b"\xef\xbb\xbf".to_vec();
+    bytes.extend_from_slice(script.as_bytes());
+    bytes
+}
+
+#[cfg(not(windows))]
+fn script_file_bytes(script: &str) -> &[u8] {
+    script.as_bytes()
+}
+
+/// Write `script` to a temp file (0700 on unix) and run it — `bash` on unix,
+/// `powershell.exe -File` on Windows — capturing combined stdout+stderr.
+/// `ping` is called every SCRIPT_PING_INTERVAL while the script runs. The
+/// temp files are always deleted afterwards.
 fn run_script(script: &str, mut ping: impl FnMut()) -> ScriptOutcome {
     let fail = |outcome: &mut ScriptOutcome, e: anyhow::Error| {
         tracing::error!("script job failed to run: {:#}", e);
@@ -628,12 +646,15 @@ fn run_script(script: &str, mut ping: impl FnMut()) -> ScriptOutcome {
         Utc::now().timestamp_nanos_opt().unwrap_or_default(),
         COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
     );
+    #[cfg(windows)]
+    let script_path = dir.join(format!("script-{}.ps1", stamp));
+    #[cfg(not(windows))]
     let script_path = dir.join(format!("script-{}.sh", stamp));
     let log_path = dir.join(format!("script-{}.log", stamp));
 
     'run: {
         if let Err(e) = std::fs::create_dir_all(&dir)
-            .and_then(|_| std::fs::write(&script_path, script))
+            .and_then(|_| std::fs::write(&script_path, script_file_bytes(script)))
             .context("failed to write script temp file")
         {
             fail(&mut outcome, e);
@@ -664,12 +685,27 @@ fn run_script(script: &str, mut ping: impl FnMut()) -> ScriptOutcome {
             }
         };
 
-        let mut cmd = std::process::Command::new("bash");
-        cmd.arg(&script_path)
-            .stdin(std::process::Stdio::null())
+        #[cfg(windows)]
+        let mut cmd = {
+            let mut c = std::process::Command::new("powershell.exe");
+            c.arg("-NoProfile")
+                .arg("-NonInteractive")
+                .arg("-ExecutionPolicy")
+                .arg("Bypass")
+                .arg("-File")
+                .arg(&script_path);
+            c
+        };
+        #[cfg(not(windows))]
+        let mut cmd = {
+            let mut c = std::process::Command::new("bash");
+            c.arg(&script_path);
+            c
+        };
+        cmd.stdin(std::process::Stdio::null())
             .stdout(log.0)
             .stderr(log.1)
-            // The scripts run apt; never let debconf prompt on a dead stdin.
+            // The unix scripts run apt; never let debconf prompt on a dead stdin.
             .env("DEBIAN_FRONTEND", "noninteractive");
         #[cfg(unix)]
         {
@@ -677,7 +713,7 @@ fn run_script(script: &str, mut ping: impl FnMut()) -> ScriptOutcome {
             // Own process group, so a timeout kills apt/kubeadm children too.
             cmd.process_group(0);
         }
-        let mut child = match cmd.spawn().context("failed to spawn bash") {
+        let mut child = match cmd.spawn().context("failed to spawn script interpreter") {
             Ok(c) => c,
             Err(e) => {
                 fail(&mut outcome, e);

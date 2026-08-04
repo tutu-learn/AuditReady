@@ -1,5 +1,6 @@
 mod collector;
 mod config;
+mod iis;
 mod jobs;
 mod models;
 mod network_monitor;
@@ -113,14 +114,23 @@ async fn main() -> Result<()> {
         std::thread::spawn(move || pending_updates::run_refresher(cache));
     }
 
+    // Shared cache of the IIS website inventory (Windows only), refreshed in
+    // the background and reported with every telemetry snapshot.
+    let iis_cache = Arc::new(iis::IisCache::new());
+    {
+        let cache = iis_cache.clone();
+        std::thread::spawn(move || iis::run_refresher(cache));
+    }
+
     // Push telemetry. Runs in a blocking task because publisher::run is
     // synchronous and loops forever.
     let push_interval = settings.server.interval_seconds;
     let push_domain = domain.clone();
     let push_token = token.clone();
     let push_cache = pending_cache.clone();
+    let push_iis = iis_cache.clone();
     tokio::task::spawn_blocking(move || {
-        if let Err(e) = publisher::run(&push_domain, push_interval, Some(&push_token), push_cache) {
+        if let Err(e) = publisher::run(&push_domain, push_interval, Some(&push_token), push_cache, push_iis) {
             tracing::error!("telemetry publisher failed: {}", e);
         }
     });

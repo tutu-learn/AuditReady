@@ -1,4 +1,5 @@
 use crate::collector;
+use crate::iis::{IisCache, IisSection};
 use crate::models::AuditReport;
 use crate::network_monitor::{self, NetworkSnapshot};
 use crate::pending_updates::{PendingUpdate, PendingUpdatesCache};
@@ -20,6 +21,10 @@ pub struct TelemetryPayload {
     pub installed_software: Option<InstalledSoftware>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending_updates: Option<Vec<PendingUpdate>>,
+    /// IIS website inventory (Windows agents only). Omitted until the first
+    /// successful collection, so the server keeps its previous snapshot.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub iis: Option<IisSection>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compliance: Option<CompliancePayload>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -108,11 +113,13 @@ const MAX_CONNECTIONS: usize = 200;
 /// If `token` is supplied, it is sent as `Authorization: Bearer <token>`.
 /// `pending_updates` carries the cached pending-update snapshot; until the
 /// first successful collection it holds `None` and the field is omitted.
+/// `iis` works the same way for the IIS website inventory (Windows only).
 pub fn run(
     domain: &str,
     interval_secs: u64,
     token: Option<&str>,
     pending_updates: Arc<PendingUpdatesCache>,
+    iis: Arc<IisCache>,
 ) -> anyhow::Result<()> {
     let engine = RulesEngine::new(
         vec![
@@ -127,7 +134,7 @@ pub fn run(
     let endpoint = build_endpoint(domain);
 
     loop {
-        match push_snapshot(&engine, &endpoint, token, &dns_capture, &pending_updates) {
+        match push_snapshot(&engine, &endpoint, token, &dns_capture, &pending_updates, &iis) {
             Ok(()) => println!("[{}] Telemetry posted", Utc::now().format("%Y-%m-%d %H:%M:%S UTC")),
             Err(e) => eprintln!("[{}] Telemetry failed: {}", Utc::now().format("%Y-%m-%d %H:%M:%S UTC"), e),
         }
@@ -157,6 +164,7 @@ fn push_snapshot(
     token: Option<&str>,
     dns_capture: &network_monitor::DnsCapture,
     pending_updates: &PendingUpdatesCache,
+    iis: &IisCache,
 ) -> anyhow::Result<()> {
     let report = collector::collect()?;
     let processes = process_monitor::snapshot(engine);
@@ -166,6 +174,7 @@ fn push_snapshot(
     // Present (even empty) once the first collection succeeded; absent before
     // that, so the server keeps whatever snapshot it already has.
     payload.pending_updates = pending_updates.snapshot().map(|u| (*u).clone());
+    payload.iis = iis.snapshot().map(|s| (*s).clone());
     let body = serde_json::to_string(&payload)?;
     let mut request = ureq::post(endpoint)
         .set("Content-Type", "application/json")
@@ -209,6 +218,7 @@ fn build_payload(
                 .collect(),
         }),
         pending_updates: None,
+        iis: None,
         compliance: None,
         running_processes: Some(RunningProcessesPayload {
             total,
