@@ -36,6 +36,9 @@ const SCRIPT_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const SCRIPT_PING_INTERVAL: Duration = Duration::from_secs(30);
 /// Cap for the script output tail sent as `output` (the server caps at 64000).
 const OUTPUT_CAP: usize = 60000;
+/// Cap for the live output tail riding the 30s progress pings — smaller than
+/// OUTPUT_CAP so the frequent pings stay cheap.
+const LIVE_TAIL_CAP: usize = 16000;
 
 // ── Wire types ──────────────────────────────────────────────────────────────
 
@@ -258,6 +261,15 @@ impl Client {
     /// Best-effort progress ping; failures are logged, never fatal.
     fn progress(&self, name: &str, progress: u32) {
         if let Err(e) = self.report(name, "Running", Some(progress), None, None, None) {
+            tracing::warn!("progress ping for {} failed: {}", name, e);
+        }
+    }
+
+    /// Progress ping carrying the script's live output tail, so the portal can
+    /// show console output while the job still runs. Best-effort like
+    /// `progress`; an empty tail degrades to a plain progress ping.
+    fn progress_with_output(&self, name: &str, progress: u32, output: &str) {
+        if let Err(e) = self.report(name, "Running", Some(progress), None, None, Some(output)) {
             tracing::warn!("progress ping for {} failed: {}", name, e);
         }
     }
@@ -571,10 +583,10 @@ fn execute_script_job(client: &Client, state: &mut State, state_path: &PathBuf, 
     }
 
     let mut pings: u32 = 0;
-    let outcome = run_script(&job.package, || {
+    let outcome = run_script(&job.package, SCRIPT_PING_INTERVAL, |live_tail| {
         pings += 1;
         // Ramp 20 → 90 over the first pings, then hold.
-        client.progress(&job.name, (20 + pings * 10).min(90));
+        client.progress_with_output(&job.name, (20 + pings * 10).min(90), live_tail);
     });
 
     let (status, result, error) = if let Some(e) = &outcome.error {
@@ -623,9 +635,10 @@ fn script_file_bytes(script: &str) -> &[u8] {
 
 /// Write `script` to a temp file (0700 on unix) and run it — `bash` on unix,
 /// `powershell.exe -File` on Windows — capturing combined stdout+stderr.
-/// `ping` is called every SCRIPT_PING_INTERVAL while the script runs. The
-/// temp files are always deleted afterwards.
-fn run_script(script: &str, mut ping: impl FnMut()) -> ScriptOutcome {
+/// `ping` is called every SCRIPT_PING_INTERVAL while the script runs, with the
+/// live tail of the output captured so far (capped at LIVE_TAIL_CAP; empty
+/// when the log cannot be read). The temp files are always deleted afterwards.
+fn run_script(script: &str, ping_interval: Duration, mut ping: impl FnMut(&str)) -> ScriptOutcome {
     let fail = |outcome: &mut ScriptOutcome, e: anyhow::Error| {
         tracing::error!("script job failed to run: {:#}", e);
         outcome.error = Some(format!("{:#}", e));
@@ -742,8 +755,11 @@ fn run_script(script: &str, mut ping: impl FnMut()) -> ScriptOutcome {
                 outcome.timed_out = true;
                 break;
             }
-            if last_ping.elapsed() >= SCRIPT_PING_INTERVAL {
-                ping();
+            if last_ping.elapsed() >= ping_interval {
+                let live_tail = std::fs::read(&log_path)
+                    .map(|bytes| tail_chars(&String::from_utf8_lossy(&bytes), LIVE_TAIL_CAP))
+                    .unwrap_or_default();
+                ping(&live_tail);
                 last_ping = std::time::Instant::now();
             }
             std::thread::sleep(Duration::from_secs(1));
@@ -1376,7 +1392,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn script_success_reports_done_and_output() {
-        let outcome = run_script("echo hello-from-script", || {});
+        let outcome = run_script("echo hello-from-script", SCRIPT_PING_INTERVAL, |_| {});
         assert_eq!(outcome.error, None);
         assert!(!outcome.timed_out);
         assert_eq!(outcome.exit_code, Some(0));
@@ -1386,13 +1402,37 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn script_failure_reports_exit_code_and_partial_output() {
-        let outcome = run_script("echo before-failure\necho oops >&2\nexit 3", || {});
+        let outcome = run_script(
+            "echo before-failure\necho oops >&2\nexit 3",
+            SCRIPT_PING_INTERVAL,
+            |_| {},
+        );
         assert_eq!(outcome.error, None);
         assert!(!outcome.timed_out);
         assert_eq!(outcome.exit_code, Some(3));
         // Combined stdout+stderr is captured.
         assert!(outcome.output_tail.contains("before-failure"));
         assert!(outcome.output_tail.contains("oops"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn script_pings_carry_the_live_output_tail() {
+        use std::sync::{Arc, Mutex};
+        let tails: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = tails.clone();
+        let outcome = run_script(
+            "echo line-one\nsleep 3\necho line-two",
+            Duration::from_secs(1),
+            move |tail| sink.lock().unwrap().push(tail.to_string()),
+        );
+        assert_eq!(outcome.exit_code, Some(0));
+        let tails = tails.lock().unwrap();
+        // At least one ping fired while the script was still running, and it
+        // carried the output produced so far — before line-two existed.
+        assert!(!tails.is_empty());
+        assert!(tails.iter().any(|t| t.contains("line-one")));
+        assert!(tails.iter().any(|t| !t.contains("line-two")));
     }
 
     #[test]
