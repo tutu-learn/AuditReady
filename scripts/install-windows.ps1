@@ -156,13 +156,16 @@ try {
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" `
         -LogonType ServiceAccount -RunLevel Highest
+    # ExecutionTimeLimit must be PT0S (unlimited): the Task Scheduler default is
+    # 72 hours, after which it force-stops the task and nothing restarts it.
     $settings = New-ScheduledTaskSettingsSet `
         -AllowStartIfOnBatteries `
         -DontStopIfGoingOnBatteries `
         -StartWhenAvailable `
         -MultipleInstances IgnoreNew `
         -RestartCount 3 `
-        -RestartInterval (New-TimeSpan -Minutes 1)
+        -RestartInterval (New-TimeSpan -Minutes 1) `
+        -ExecutionTimeLimit ([TimeSpan]::Zero)
 
     Register-ScheduledTask -TaskName $ServiceName `
         -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
