@@ -32,3 +32,17 @@ launchctl start "$PLIST_LABEL"
 echo "AuditReady restarted successfully."
 echo "  Status: sudo launchctl list ${PLIST_LABEL}"
 echo "  Logs:   sudo tail -f /etc/auditready/auditready.log"
+
+# Also restart the per-user client-mode LaunchAgent when it is installed.
+CLIENT_PLIST_LABEL="com.auditready.client"
+CLIENT_PLIST_PATH="/Library/LaunchAgents/${CLIENT_PLIST_LABEL}.plist"
+if [ -f "$CLIENT_PLIST_PATH" ]; then
+    CONSOLE_USER=$(stat -f '%Su' /dev/console 2>/dev/null || true)
+    if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
+        CONSOLE_UID=$(id -u "$CONSOLE_USER")
+        launchctl kickstart -k "gui/${CONSOLE_UID}/${CLIENT_PLIST_LABEL}" 2>/dev/null || true
+        echo "AuditReady client agent restarted for user ${CONSOLE_USER}."
+    else
+        echo "Client agent installed but no user is logged in; it will start at next login."
+    fi
+fi

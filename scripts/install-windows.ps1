@@ -27,6 +27,13 @@
 .PARAMETER ServiceName
     Name of the Windows service (default: AuditReady).
 
+.PARAMETER ServiceName
+    Name of the Windows service (default: AuditReady).
+
+.PARAMETER ClientMode
+    Additionally register a per-user AtLogon task (AuditReady-Client) that
+    runs the agent in client mode (file-change and clipboard monitoring).
+
 .EXAMPLE
     .\install-windows.ps1 -Domain api.example.com -Token abc123
 
@@ -42,7 +49,8 @@ param(
     [string]$Version = "latest",
     [string]$InstallDir = "C:\Program Files\AuditReady",
     [string]$ConfigDir = "C:\ProgramData\AuditReady",
-    [string]$ServiceName = "AuditReady"
+    [string]$ServiceName = "AuditReady",
+    [switch]$ClientMode
 )
 
 $ErrorActionPreference = "Stop"
@@ -171,6 +179,36 @@ try {
         -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
 
     Start-ScheduledTask -TaskName $ServiceName
+
+    # Client mode runs as a second, per-user instance: clipboard and
+    # foreground-window access require the user's interactive session, which
+    # the SYSTEM task cannot do.
+    if ($ClientMode) {
+        $ClientTaskName = "AuditReady-Client"
+        $existingClientTask = Get-ScheduledTask -TaskName $ClientTaskName -ErrorAction SilentlyContinue
+        if ($existingClientTask) {
+            Stop-ScheduledTask -TaskName $ClientTaskName -ErrorAction SilentlyContinue
+            Unregister-ScheduledTask -TaskName $ClientTaskName -Confirm:$false -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 1
+        }
+
+        $clientAction = New-ScheduledTaskAction -Execute (Join-Path $InstallDir "auditready.exe") `
+            -Argument "--config `"$ConfigPath`" --mode client"
+        $clientTrigger = New-ScheduledTaskTrigger -AtLogon
+        # Any user's logon starts the task as that user.
+        $clientPrincipal = New-ScheduledTaskPrincipal -GroupId "BUILTIN\Users" -RunLevel Limited
+        # ExecutionTimeLimit must be PT0S (unlimited): same 72 h fix as the main task.
+        $clientSettings = New-ScheduledTaskSettingsSet `
+            -AllowStartIfOnBatteries `
+            -DontStopIfGoingOnBatteries `
+            -MultipleInstances IgnoreNew `
+            -ExecutionTimeLimit ([TimeSpan]::Zero)
+
+        Register-ScheduledTask -TaskName $ClientTaskName `
+            -Action $clientAction -Trigger $clientTrigger -Principal $clientPrincipal -Settings $clientSettings -Force | Out-Null
+        Write-Host "Registered per-user client task $ClientTaskName (starts at each user logon)."
+    }
+
     Write-Host ""
     Write-Host "AuditReady is installed and running."
     Write-Host "  Status:       Get-ScheduledTaskInfo $ServiceName"

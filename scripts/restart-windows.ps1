@@ -26,3 +26,13 @@ Start-ScheduledTask -TaskName $TaskName
 
 Write-Host "AuditReady restarted successfully."
 Write-Host "  Status: Get-ScheduledTaskInfo $TaskName"
+
+# Also restart the per-user client-mode task when it is installed.
+$clientTaskName = "AuditReady-Client"
+$clientTask = Get-ScheduledTask -TaskName $clientTaskName -ErrorAction SilentlyContinue
+if ($clientTask) {
+    Stop-ScheduledTask -TaskName $clientTaskName -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+    Start-ScheduledTask -TaskName $clientTaskName
+    Write-Host "AuditReady-Client restarted successfully."
+}

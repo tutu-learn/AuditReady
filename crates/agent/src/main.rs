@@ -1,3 +1,4 @@
+mod client;
 mod collector;
 mod config;
 mod iis;
@@ -21,10 +22,14 @@ async fn main() -> Result<()> {
 
     // Parse a subset of CLI arguments manually to avoid adding a dependency.
     let mut config_path: Option<String> = None;
+    let mut mode_flag: Option<String> = None;
     let mut i = 1;
     while i < args.len() {
         if args[i] == "--config" && i + 1 < args.len() {
             config_path = Some(args[i + 1].clone());
+            i += 2;
+        } else if args[i] == "--mode" && i + 1 < args.len() {
+            mode_flag = Some(args[i + 1].clone());
             i += 2;
         } else {
             i += 1;
@@ -43,6 +48,13 @@ async fn main() -> Result<()> {
         None => config::AppSettings::default(),
     };
     settings.apply_env_overrides();
+    // Mode precedence: --mode flag beats AUDITREADY_MODE beats the config file.
+    let mode = mode_flag
+        .or(settings.mode.clone())
+        .unwrap_or_else(|| "agent".to_string());
+    if mode != "agent" && mode != "client" {
+        tracing::warn!("unknown mode '{}', expected 'agent' or 'client'", mode);
+    }
 
     // --print-network: collect and print the network snapshot as JSON, then exit
     if args.iter().any(|a| a == "--print-network") {
@@ -72,6 +84,17 @@ async fn main() -> Result<()> {
         println!("OS      : {} {}", report.os, report.os_version);
         println!("Scanned : {}", report.scanned_at.format("%Y-%m-%d %H:%M:%S UTC"));
         println!("Total   : {} packages", report.software_count);
+        println!("{}", "─".repeat(72));
+        println!("Disks");
+        for d in &report.disks {
+            println!(
+                "{:<30} {:>10.1} GiB free of {:.1} GiB  {}",
+                truncate(&d.mount_point, 29),
+                d.available_bytes as f64 / (1 << 30) as f64,
+                d.total_bytes as f64 / (1 << 30) as f64,
+                d.name
+            );
+        }
         println!("{}", "─".repeat(72));
         println!("{:<45} {:<20} Source", "Name", "Version");
         println!("{}", "─".repeat(72));
@@ -152,10 +175,24 @@ async fn main() -> Result<()> {
             .ok_or_else(|| anyhow::anyhow!("tunnel is enabled but server.domain is not configured"))?;
         tokio::spawn(tunnel::run(
             broker_url,
-            token,
+            token.clone(),
             settings.server.tunnel_shell,
             settings.server.tunnel_cwd,
         ));
+    }
+
+    // Client mode: additionally monitor user file changes and clipboard
+    // activity, reporting to /audit_ready/client-report. Runs as a separate
+    // per-user instance (logon task / LaunchAgent); telemetry keeps working.
+    if mode == "client" {
+        let client_settings = settings.client.clone();
+        let client_domain = domain.clone();
+        let client_token = token.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = client::run(&client_settings, &client_domain, &client_token) {
+                tracing::error!("client mode failed: {}", e);
+            }
+        });
     }
 
     // Default: silent mode. Keep the process alive and refresh network state.

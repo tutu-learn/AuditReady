@@ -70,6 +70,16 @@ try {
     $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     if ($task) {
         Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+
+        # Repair tasks registered before the 72h fix: Task Scheduler's default
+        # ExecutionTimeLimit (PT72H) force-stops the agent ~3 days after task
+        # start, and nothing restarts it until reboot. Updating the binary
+        # alone never touches the task settings, so enforce PT0S (unlimited).
+        if ($task.Settings.ExecutionTimeLimit -ne "PT0S") {
+            $task.Settings.ExecutionTimeLimit = "PT0S"
+            Set-ScheduledTask -TaskName $TaskName -Settings $task.Settings | Out-Null
+            Write-Host "Repaired scheduled task settings (removed 72h execution time limit)."
+        }
     }
 
     # Stopping the task is asynchronous and best-effort: kill any lingering

@@ -172,6 +172,63 @@ installs this is `/etc/auditready/appsettings.json`:
 - `tunnel_shell` — shell to use for the tunnel (`null` = system default).
 - `tunnel_cwd` — working directory for the tunnel shell.
 
+## Client mode
+
+Client mode is a second, per-user instance of the agent (Windows and macOS)
+that reports user activity the SYSTEM/root instance cannot see, because
+clipboard and foreground-window access require the user's interactive session.
+It is started with `--mode client` and reports to
+`POST {scheme}://{domain}/audit_ready/client-report` every 30 minutes.
+
+Every period it reports:
+
+- Which files under the user's home directory changed.
+- Every clipboard **copy** (with the source program) and **paste** (with the
+  destination program), with size.
+- Sensitive-data flags over all clipboard text: credit cards (Luhn-verified),
+  SA ID numbers, US SSNs, JWTs, API keys, private keys, and password
+  assignments. Only masked values (first/last 2 characters) are reported.
+
+Configuration (`appsettings.json`, all optional):
+
+```json
+{
+  "mode": "client",
+  "client": {
+    "report_interval_seconds": 1800,
+    "clipboard_content_threshold_bytes": 51200,
+    "clipboard_content_max_bytes": 102400,
+    "scan_root": null,
+    "excluded_dirs": ["node_modules", ".git"]
+  }
+}
+```
+
+The mode can also be set with the `AUDITREADY_MODE` environment variable or
+the `--mode <agent|client>` CLI flag (flag beats env var beats config file).
+`AUDITREADY_CLIENT_REPORT_INTERVAL_SECONDS` and
+`AUDITREADY_CLIENT_CLIPBOARD_THRESHOLD_BYTES` override the matching client
+settings.
+
+Install client mode alongside the regular agent:
+
+- Windows: `.\install-windows.ps1 -Domain api.example.com -Token abc123 -ClientMode`
+  registers the per-user `AuditReady-Client` scheduled task (runs at each user
+  logon).
+- macOS: `sudo MODE=client ./install-macos.sh` additionally installs the
+  `com.auditready.client` LaunchAgent. On macOS, **paste** capture requires
+  the Accessibility permission granted to the `auditready` binary (System
+  Settings → Privacy & Security → Accessibility); without it the agent logs a
+  warning once and reports copy events only.
+
+The `restart-windows.ps1` and `restart-macos.sh` helpers also restart the
+client task/agent when it is installed.
+
+**Privacy note:** clipboard content only leaves the machine for events at or
+above `clipboard_content_threshold_bytes` (default 50 KB), truncated to
+`clipboard_content_max_bytes` (default 100 KB). Smaller copies and pastes are
+reported as metadata (time, program, size, sensitive-data flags) only.
+
 ## Managing the agent (Linux)
 
 ```bash

@@ -1,4 +1,4 @@
-use crate::models::{AuditReport, SoftwareEntry};
+use crate::models::{AuditReport, DiskEntry, SoftwareEntry};
 use anyhow::Result;
 use chrono::Utc;
 
@@ -14,7 +14,23 @@ pub fn collect() -> Result<AuditReport> {
         scanned_at: Utc::now(),
         software_count: software.len(),
         software,
+        disks: disks(),
     })
+}
+
+/// Mounted disks/volumes with total and available space (cross-platform via
+/// sysinfo). Pseudo filesystems with zero capacity are skipped.
+pub fn disks() -> Vec<DiskEntry> {
+    sysinfo::Disks::new_with_refreshed_list()
+        .iter()
+        .filter(|d| d.total_space() > 0)
+        .map(|d| DiskEntry {
+            mount_point: d.mount_point().to_string_lossy().to_string(),
+            name: d.name().to_string_lossy().to_string(),
+            total_bytes: d.total_space(),
+            available_bytes: d.available_space(),
+        })
+        .collect()
 }
 
 fn hostname() -> String {

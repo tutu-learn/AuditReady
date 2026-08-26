@@ -6,6 +6,12 @@ use std::path::Path;
 pub struct AppSettings {
     #[serde(default)]
     pub server: ServerSettings,
+    /// Operating mode: `"agent"` (default) or `"client"`. Client mode
+    /// additionally reports changed user files and clipboard activity.
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub client: ClientSettings,
 }
 
 /// Settings for the single backend server.
@@ -52,6 +58,63 @@ fn default_interval() -> u64 {
     30
 }
 
+/// Settings for client mode (user file-change + clipboard monitoring).
+#[derive(Debug, Clone, Deserialize)]
+pub struct ClientSettings {
+    /// Seconds between client reports.
+    #[serde(default = "default_client_report_interval")]
+    pub report_interval_seconds: u64,
+    /// Clipboard events at or above this size include their text content.
+    #[serde(default = "default_clipboard_threshold")]
+    pub clipboard_content_threshold_bytes: u64,
+    /// Clipboard text is truncated to this many bytes in reports.
+    #[serde(default = "default_clipboard_max")]
+    pub clipboard_content_max_bytes: u64,
+    /// Root directory scanned for changed files. Defaults to the current
+    /// user's home directory.
+    #[serde(default)]
+    pub scan_root: Option<String>,
+    /// Directory names (or slash-separated relative paths) skipped by the
+    /// changed-file scan.
+    #[serde(default = "default_excluded_dirs")]
+    pub excluded_dirs: Vec<String>,
+}
+
+impl Default for ClientSettings {
+    fn default() -> Self {
+        Self {
+            report_interval_seconds: default_client_report_interval(),
+            clipboard_content_threshold_bytes: default_clipboard_threshold(),
+            clipboard_content_max_bytes: default_clipboard_max(),
+            scan_root: None,
+            excluded_dirs: default_excluded_dirs(),
+        }
+    }
+}
+
+fn default_client_report_interval() -> u64 {
+    1800
+}
+
+fn default_clipboard_threshold() -> u64 {
+    51200
+}
+
+fn default_clipboard_max() -> u64 {
+    102400
+}
+
+fn default_excluded_dirs() -> Vec<String> {
+    vec![
+        "AppData/Local/Temp".to_string(),
+        "AppData/Local/Microsoft".to_string(),
+        "Library/Caches".to_string(),
+        "node_modules".to_string(),
+        ".git".to_string(),
+        ".Trash".to_string(),
+    ]
+}
+
 impl AppSettings {
     /// Return the WebSocket URL the tunnel should use.
     ///
@@ -71,6 +134,9 @@ impl AppSettings {
     /// - `AUDITREADY_TUNNEL_ENABLED`
     /// - `AUDITREADY_TUNNEL_SHELL`
     /// - `AUDITREADY_TUNNEL_CWD`
+    /// - `AUDITREADY_MODE`
+    /// - `AUDITREADY_CLIENT_REPORT_INTERVAL_SECONDS`
+    /// - `AUDITREADY_CLIENT_CLIPBOARD_THRESHOLD_BYTES`
     pub fn apply_env_overrides(&mut self) {
         if let Ok(v) = std::env::var("AUDITREADY_DOMAIN") {
             if !v.is_empty() {
@@ -98,6 +164,21 @@ impl AppSettings {
         if let Ok(v) = std::env::var("AUDITREADY_TUNNEL_CWD") {
             if !v.is_empty() {
                 self.server.tunnel_cwd = Some(v);
+            }
+        }
+        if let Ok(v) = std::env::var("AUDITREADY_MODE") {
+            if !v.is_empty() {
+                self.mode = Some(v);
+            }
+        }
+        if let Ok(v) = std::env::var("AUDITREADY_CLIENT_REPORT_INTERVAL_SECONDS") {
+            if let Ok(n) = v.parse() {
+                self.client.report_interval_seconds = n;
+            }
+        }
+        if let Ok(v) = std::env::var("AUDITREADY_CLIENT_CLIPBOARD_THRESHOLD_BYTES") {
+            if let Ok(n) = v.parse() {
+                self.client.clipboard_content_threshold_bytes = n;
             }
         }
     }
@@ -147,5 +228,59 @@ mod tests {
         assert_eq!(settings.server.token.as_deref(), Some("t"));
 
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn parses_client_section_with_defaults() {
+        // Full client section.
+        let settings: AppSettings = serde_json::from_str(
+            r#"{
+                "mode": "client",
+                "client": {
+                    "report_interval_seconds": 900,
+                    "clipboard_content_threshold_bytes": 1024,
+                    "clipboard_content_max_bytes": 4096,
+                    "scan_root": "/tmp/scan",
+                    "excluded_dirs": ["skipme"]
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(settings.mode.as_deref(), Some("client"));
+        assert_eq!(settings.client.report_interval_seconds, 900);
+        assert_eq!(settings.client.clipboard_content_threshold_bytes, 1024);
+        assert_eq!(settings.client.clipboard_content_max_bytes, 4096);
+        assert_eq!(settings.client.scan_root.as_deref(), Some("/tmp/scan"));
+        assert_eq!(settings.client.excluded_dirs, vec!["skipme".to_string()]);
+
+        // Missing client section gets defaults.
+        let settings: AppSettings = serde_json::from_str("{}").unwrap();
+        assert!(settings.mode.is_none());
+        assert_eq!(settings.client.report_interval_seconds, 1800);
+        assert_eq!(settings.client.clipboard_content_threshold_bytes, 51200);
+        assert_eq!(settings.client.clipboard_content_max_bytes, 102400);
+        assert!(settings.client.scan_root.is_none());
+        assert!(settings
+            .client
+            .excluded_dirs
+            .contains(&"node_modules".to_string()));
+        assert!(settings.client.excluded_dirs.contains(&".git".to_string()));
+    }
+
+    #[test]
+    fn env_overrides_mode_and_client_settings() {
+        std::env::set_var("AUDITREADY_MODE", "client");
+        std::env::set_var("AUDITREADY_CLIENT_REPORT_INTERVAL_SECONDS", "60");
+        std::env::set_var("AUDITREADY_CLIENT_CLIPBOARD_THRESHOLD_BYTES", "2048");
+
+        let mut settings = AppSettings::default();
+        settings.apply_env_overrides();
+        assert_eq!(settings.mode.as_deref(), Some("client"));
+        assert_eq!(settings.client.report_interval_seconds, 60);
+        assert_eq!(settings.client.clipboard_content_threshold_bytes, 2048);
+
+        std::env::remove_var("AUDITREADY_MODE");
+        std::env::remove_var("AUDITREADY_CLIENT_REPORT_INTERVAL_SECONDS");
+        std::env::remove_var("AUDITREADY_CLIENT_CLIPBOARD_THRESHOLD_BYTES");
     }
 }

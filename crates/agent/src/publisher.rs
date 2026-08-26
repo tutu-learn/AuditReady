@@ -1,6 +1,6 @@
 use crate::collector;
 use crate::iis::{IisCache, IisSection};
-use crate::models::AuditReport;
+use crate::models::{AuditReport, DiskEntry};
 use crate::network_monitor::{self, NetworkSnapshot};
 use crate::pending_updates::{PendingUpdate, PendingUpdatesCache};
 use crate::process_monitor::{self, ProcessEvent, RulesEngine, Verdict};
@@ -17,6 +17,8 @@ use std::time::Duration;
 pub struct TelemetryPayload {
     pub hostname: String,
     pub os_version: String,
+    /// Mounted disks with total/available space.
+    pub disks: Vec<DiskEntry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub installed_software: Option<InstalledSoftware>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -206,6 +208,7 @@ fn build_payload(
     TelemetryPayload {
         hostname: report.hostname,
         os_version: report.os_version,
+        disks: report.disks,
         installed_software: Some(InstalledSoftware {
             packages: report
                 .software
@@ -319,6 +322,7 @@ mod tests {
             scanned_at: Utc::now(),
             software_count: 0,
             software: vec![],
+            disks: vec![],
         };
         let network = NetworkSnapshot {
             interfaces: vec![],
@@ -392,6 +396,7 @@ mod tests {
             scanned_at: Utc::now(),
             software_count: 0,
             software: vec![],
+            disks: vec![],
         };
         let network = NetworkSnapshot {
             interfaces: vec![],
@@ -414,6 +419,7 @@ mod tests {
             scanned_at: Utc::now(),
             software_count: 0,
             software: vec![],
+            disks: vec![],
         };
         let network = NetworkSnapshot {
             interfaces: vec![],
@@ -452,6 +458,7 @@ mod tests {
             scanned_at: Utc::now(),
             software_count: 0,
             software: vec![],
+            disks: vec![],
         };
         let connections = (0..250)
             .map(|i| network_monitor::NetworkConnection {
