@@ -59,7 +59,8 @@ if [ "$VERSION" = "latest" ]; then
     fi
 fi
 
-ASSET="auditready-${TARGET}.tar.gz"
+# Releases package macOS builds as .zip (see release.yml).
+ASSET="auditready-${TARGET}.zip"
 URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET}"
 
 echo "Installing AuditReady ${VERSION} for ${TARGET}..."
@@ -68,7 +69,7 @@ TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 curl -fsSL "$URL" -o "$TMP_DIR/$ASSET"
-tar xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR"
+unzip -q "$TMP_DIR/$ASSET" -d "$TMP_DIR"
 
 # Install binary.
 install -m 755 "$TMP_DIR/auditready/auditready" "$INSTALL_DIR/auditready"

@@ -71,8 +71,8 @@ jobs:
           cp appsettings.json dist/auditready/appsettings.example.json
           cp LICENSE dist/auditready/ 2>/dev/null || true
 
-      - name: Package as tar.gz (Linux)
-        if: matrix.os == 'ubuntu-latest'
+      - name: Package as tar.gz
+        if: matrix.archive == 'tar.gz'
         shell: bash
         run: |
           cp scripts/install.sh dist/auditready/
@@ -82,8 +82,8 @@ jobs:
           tar czf auditready-${{ matrix.target }}.tar.gz auditready
           mv auditready-${{ matrix.target }}.tar.gz ../
 
-      - name: Package as zip (Windows/macOS)
-        if: matrix.os != 'ubuntu-latest'
+      - name: Package as zip
+        if: matrix.archive == 'zip'
         shell: bash
         run: |
           if [ "${{ matrix.target }}" = "x86_64-pc-windows-msvc" ]; then
