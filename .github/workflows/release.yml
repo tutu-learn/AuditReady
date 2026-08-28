@@ -92,9 +92,11 @@ jobs:
             cp scripts/update-token-windows.ps1 dist/auditready/
             cp scripts/update-windows.ps1 dist/auditready/
           else
-            # macOS target: bundle the restart helper so install-macos.sh can
-            # install it as auditready-restart.
+            # macOS target: bundle the helper scripts so install-macos.sh /
+            # update-macos.sh can install them as auditready-restart /
+            # auditready-update.
             cp scripts/restart-macos.sh dist/auditready/
+            cp scripts/update-macos.sh dist/auditready/
           fi
           cd dist
           7z a ../auditready-${{ matrix.target }}.zip auditready

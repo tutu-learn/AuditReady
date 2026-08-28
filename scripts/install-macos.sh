@@ -82,6 +82,10 @@ if [ -f "$TMP_DIR/auditready/restart-macos.sh" ]; then
     install -m 755 "$TMP_DIR/auditready/restart-macos.sh" "$INSTALL_DIR/auditready-restart"
     echo "Installed auditready-restart to ${INSTALL_DIR}/auditready-restart"
 fi
+if [ -f "$TMP_DIR/auditready/update-macos.sh" ]; then
+    install -m 755 "$TMP_DIR/auditready/update-macos.sh" "$INSTALL_DIR/auditready-update"
+    echo "Installed auditready-update to ${INSTALL_DIR}/auditready-update"
+fi
 
 # Prepare config directory.
 mkdir -p "$CONFIG_DIR"
@@ -220,6 +224,7 @@ if launchctl start "$PLIST_LABEL" 2>/dev/null; then
     echo "  Status:  sudo launchctl list ${PLIST_LABEL}"
     echo "  Logs:    sudo tail -f ${CONFIG_DIR}/auditready.log"
     echo "  Restart: sudo auditready-restart"
+    echo "  Update:  sudo auditready-update"
 else
     echo ""
     echo "AuditReady is installed but failed to start. Check the logs:"

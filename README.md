@@ -285,6 +285,24 @@ Invoke-WebRequest `
 & "C:\Program Files\AuditReady\update-token-windows.ps1" abc123
 ```
 
+## Managing the agent (macOS)
+
+```bash
+# Status and logs
+sudo launchctl list com.auditready.agent
+sudo tail -f /etc/auditready/auditready.log
+
+# Restart
+sudo auditready-restart
+
+# Update to the latest release (keeps your config, restarts the daemon)
+sudo auditready-update
+# or fetch the script directly:
+wget -q https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/update-macos.sh
+chmod +x update-macos.sh
+sudo ./update-macos.sh            # or: sudo VERSION=<tag> ./update-macos.sh
+```
+
 ## Uninstall (Linux)
 
 ```bash
