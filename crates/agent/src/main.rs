@@ -117,6 +117,17 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    // Client mode on Windows runs as a per-user background monitor started
+    // by Task Scheduler, which gives the console app its own window on the
+    // user's desktop. Closing that window kills the agent (CTRL_CLOSE_EVENT),
+    // silently stopping monitoring. Detach when we own the console so the
+    // window closes itself at startup; when started from an existing terminal
+    // (shared console) stay attached so debug output remains visible.
+    #[cfg(windows)]
+    if mode == "client" {
+        detach_owned_console();
+    }
+
     // Shared backend config is required for either push or tunnel.
     let domain = settings
         .server
@@ -200,6 +211,21 @@ async fn main() -> Result<()> {
     loop {
         let _ = network_monitor::snapshot(Some(&dns_capture));
         tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+}
+
+/// Detach from the console only when this process is the sole process
+/// attached to it — i.e. the console was created for us (Task Scheduler
+/// launch) and its window would otherwise sit on the user's desktop.
+#[cfg(windows)]
+fn detach_owned_console() {
+    use windows::Win32::System::Console::{FreeConsole, GetConsoleProcessList};
+    unsafe {
+        let mut list = [0u32; 2];
+        let count = GetConsoleProcessList(&mut list);
+        if count == 1 {
+            let _ = FreeConsole();
+        }
     }
 }
 
