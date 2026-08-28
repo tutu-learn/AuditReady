@@ -1,4 +1,5 @@
 mod client;
+mod cmd;
 mod collector;
 mod config;
 mod iis;

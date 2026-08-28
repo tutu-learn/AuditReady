@@ -1,3 +1,4 @@
+use crate::cmd::CommandExtNoWindow;
 use crate::models::{AuditReport, DiskEntry, SoftwareEntry};
 use anyhow::Result;
 use chrono::Utc;
@@ -34,8 +35,9 @@ pub fn disks() -> Vec<DiskEntry> {
 }
 
 fn hostname() -> String {
-    std::process::Command::new("hostname")
-        .output()
+    let mut cmd = std::process::Command::new("hostname");
+    cmd.no_window();
+    cmd.output()
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .unwrap_or_else(|| "unknown".to_string())

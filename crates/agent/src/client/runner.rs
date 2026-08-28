@@ -1,6 +1,7 @@
 use super::clipboard::{self, EventKind};
 use super::report::{self, ClientReport, ClipboardEventReport};
 use super::{file_scan, sensitive};
+use crate::cmd::CommandExtNoWindow;
 use crate::config::ClientSettings;
 use chrono::Utc;
 use std::path::PathBuf;
@@ -122,8 +123,9 @@ fn username() -> String {
 }
 
 fn hostname() -> String {
-    std::process::Command::new("hostname")
-        .output()
+    let mut cmd = std::process::Command::new("hostname");
+    cmd.no_window();
+    cmd.output()
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .unwrap_or_else(|| "unknown".to_string())

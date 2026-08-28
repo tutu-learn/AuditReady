@@ -328,6 +328,7 @@ mod platform {
 #[cfg(windows)]
 mod platform {
     use super::{parse, PendingUpdate};
+    use crate::cmd::CommandExtNoWindow;
     use anyhow::{bail, Context};
     use std::process::{Command, Stdio};
 
@@ -356,6 +357,7 @@ foreach ($u in $result.Updates) {
                 WUA_LIST_SCRIPT,
             ])
             .stdin(Stdio::null())
+            .no_window()
             .output()
             .context("failed to run Windows Update search")?;
         if !out.status.success() {
@@ -381,6 +383,7 @@ foreach ($u in $result.Updates) {
                 "--disable-interactivity",
             ])
             .stdin(Stdio::null())
+            .no_window()
             .output();
         match out {
             Ok(out) => parse::winget(&String::from_utf8_lossy(&out.stdout)),

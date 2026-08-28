@@ -1513,6 +1513,7 @@ mod platform {
 #[cfg(windows)]
 mod platform {
     use super::*;
+    use crate::cmd::CommandExtNoWindow;
     use std::collections::HashMap;
     use std::process::Command;
     use std::thread;
@@ -1556,6 +1557,7 @@ mod platform {
                 "-Command",
                 "Get-DnsClientCache | Select-Object Entry, Type, Data | ConvertTo-Csv -NoTypeInformation",
             ])
+            .no_window()
             .output()?;
 
         if !out.status.success() {
@@ -1580,6 +1582,7 @@ mod platform {
                 "-Command",
                 "Get-NetIPAddress | Select-Object InterfaceAlias, IPAddress | Format-Table -HideTableHeaders",
             ])
+            .no_window()
             .output();
         let text = match out {
             Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
@@ -1613,6 +1616,7 @@ mod platform {
                 "-Command",
                 "(Get-DnsClientServerAddress -AddressFamily IPv4).ServerAddresses | Sort-Object -Unique",
             ])
+            .no_window()
             .output();
         match out {
             Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
@@ -1627,6 +1631,7 @@ mod platform {
     fn run_ps(script: &str) -> String {
         Command::new("powershell")
             .args(["-NoProfile", "-NonInteractive", "-Command", script])
+            .no_window()
             .output()
             .ok()
             .filter(|o| o.status.success())

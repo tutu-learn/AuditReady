@@ -13,6 +13,7 @@
 //! nothing: after the agent comes back it verifies the outcome and sends the
 //! terminal report that closes the job on the server.
 
+use crate::cmd::CommandExtNoWindow;
 use anyhow::{anyhow, bail, Context};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -707,6 +708,7 @@ fn run_script(script: &str, ping_interval: Duration, mut ping: impl FnMut(&str))
                 .arg("Bypass")
                 .arg("-File")
                 .arg(&script_path);
+            c.no_window();
             c
         };
         #[cfg(not(windows))]
@@ -833,7 +835,9 @@ fn summarize(bytes: &[u8]) -> String {
 }
 
 fn run_checked(program: &str, args: &[&str]) -> anyhow::Result<std::process::Output> {
-    let out = std::process::Command::new(program)
+    let mut cmd = std::process::Command::new(program);
+    cmd.no_window();
+    let out = cmd
         .args(args)
         .stdin(std::process::Stdio::null())
         .output()
@@ -1079,6 +1083,7 @@ mod exec {
 #[cfg(windows)]
 mod exec {
     use super::{bail, run_checked, summarize, Context};
+    use crate::cmd::CommandExtNoWindow;
     use std::process::{Command, Stdio};
 
     fn command_exists(name: &str) -> bool {
@@ -1087,6 +1092,7 @@ mod exec {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
+            .no_window()
             .status()
             .map(|s| s.success())
             .unwrap_or(false)
@@ -1201,6 +1207,7 @@ if ($r.ResultCode -eq 2) { exit 0 } else { Write-Error "install result code $($r
             let out = Command::new("winget")
                 .args(["list", "--id", package, "--exact", "--accept-source-agreements"])
                 .stdin(Stdio::null())
+                .no_window()
                 .output()
                 .context("failed to run winget list")?;
             if out.status.success() {
@@ -1218,6 +1225,7 @@ if ($r.ResultCode -eq 2) { exit 0 } else { Write-Error "install result code $($r
             let out = Command::new("choco")
                 .args(["list", "--local-only", "--exact", package])
                 .stdin(Stdio::null())
+                .no_window()
                 .output()
                 .context("failed to run choco list")?;
             let stdout = String::from_utf8_lossy(&out.stdout);
@@ -1268,6 +1276,7 @@ exit 1
                     id,
                 ])
                 .stdin(Stdio::null())
+                .no_window()
                 .output()
                 .context("failed to run KB verification")?;
             if !out.status.success() {

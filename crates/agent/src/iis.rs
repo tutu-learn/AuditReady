@@ -130,6 +130,7 @@ pub(crate) fn parse(output: &str) -> Option<IisSection> {
 #[cfg(windows)]
 mod platform {
     use super::{parse, IisSection};
+    use crate::cmd::CommandExtNoWindow;
     use anyhow::{bail, Context};
     use std::process::{Command, Stdio};
 
@@ -171,6 +172,7 @@ ConvertTo-Json -Compress -Depth 4 -InputObject $sites
                 IIS_LIST_SCRIPT,
             ])
             .stdin(Stdio::null())
+            .no_window()
             .output()
             .context("failed to run IIS inventory script")?;
         if !out.status.success() {
