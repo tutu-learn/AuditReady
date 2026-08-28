@@ -115,7 +115,14 @@ PY
         echo "Neither jq nor python3 available; skipping client interval update." >&2
         echo "Set \"client\": { \"report_interval_seconds\": 300 } in ${CONFIG_FILE} manually." >&2
     fi
-    chmod 600 "$CONFIG_FILE"
+    # The client-mode LaunchAgent runs as the logged-in user and must be able
+    # to read this file; keep it staff-readable when client mode is installed.
+    if [ -f "$CLIENT_PLIST_PATH" ]; then
+        chgrp staff "$CONFIG_FILE"
+        chmod 640 "$CONFIG_FILE"
+    else
+        chmod 600 "$CONFIG_FILE"
+    fi
     echo "Set client.report_interval_seconds = 300 (5 minutes) in ${CONFIG_FILE}"
 fi
 
@@ -139,6 +146,13 @@ fi
 # The client LaunchAgent shares the same binary; kick it so it picks up the
 # new version (KeepAlive restarts it, but only after it exits on its own).
 if [ -f "$CLIENT_PLIST_PATH" ]; then
+    # The client runs as the logged-in user and must be able to write its log
+    # in the root-owned config dir. Repair this for installs made before the
+    # installer handled client permissions.
+    touch /etc/auditready/auditready-client.log
+    chgrp staff /etc/auditready/auditready-client.log
+    chmod 664 /etc/auditready/auditready-client.log
+
     CONSOLE_USER=$(stat -f '%Su' /dev/console 2>/dev/null || true)
     if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
         CONSOLE_UID=$(id -u "$CONSOLE_USER")

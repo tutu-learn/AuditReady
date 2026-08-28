@@ -201,6 +201,16 @@ EOF
     chmod 644 "$CLIENT_PLIST_PATH"
     echo "Created LaunchAgent at ${CLIENT_PLIST_PATH}"
 
+    # The client runs as the logged-in user, not root, so it cannot read the
+    # root-only config or create its log in the root-owned config dir. Make
+    # both staff-accessible, or the client exits immediately with EACCES.
+    # Note: this makes the agent token readable by any admin (staff) user.
+    chgrp staff "$CONFIG_DIR/appsettings.json"
+    chmod 640 "$CONFIG_DIR/appsettings.json"
+    touch "${CONFIG_DIR}/auditready-client.log"
+    chgrp staff "${CONFIG_DIR}/auditready-client.log"
+    chmod 664 "${CONFIG_DIR}/auditready-client.log"
+
     # Load it into the currently logged-in user's GUI session, if any.
     CONSOLE_USER=$(stat -f '%Su' /dev/console 2>/dev/null || true)
     if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
