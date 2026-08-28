@@ -129,6 +129,14 @@ try {
     } else {
         Write-Host "No $TaskName task found; binary updated. Start the agent manually."
     }
+
+    # The process kill above also stops the per-user client-mode agent, whose
+    # task only triggers AtLogon — without this it stays down until re-login.
+    $clientTaskName = "AuditReady-Client"
+    if (Get-ScheduledTask -TaskName $clientTaskName -ErrorAction SilentlyContinue) {
+        Start-ScheduledTask -TaskName $clientTaskName
+        Write-Host "  Client: $clientTaskName restarted."
+    }
 } finally {
     Remove-Item -Path $TmpDir -Recurse -Force -ErrorAction SilentlyContinue
 }

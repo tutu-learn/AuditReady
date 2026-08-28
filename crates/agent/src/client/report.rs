@@ -1,4 +1,4 @@
-use super::file_scan::ChangedFile;
+use super::file_scan::{ChangedFile, FolderWrite};
 use super::sensitive::SensitiveFinding;
 use crate::models::DiskEntry;
 use chrono::{DateTime, Utc};
@@ -18,8 +18,22 @@ pub struct ClientReport {
     pub disks: Vec<DiskEntry>,
     pub changed_files: Vec<ChangedFile>,
     pub clipboard_events: Vec<ClipboardEventReport>,
+    /// Processes running at report time, busiest by CPU first (capped).
+    pub running_processes: Vec<RunningProcessReport>,
+    /// Per-folder write activity over the period, busiest first.
+    pub folder_writes: Vec<FolderWrite>,
     pub total_copy_bytes: u64,
     pub sensitive_hits: u64,
+}
+
+/// One running process in the wire format. `cpu_percent`/`memory_bytes` are
+/// null when the platform cannot provide them.
+#[derive(Debug, Serialize)]
+pub struct RunningProcessReport {
+    pub name: String,
+    pub pid: u32,
+    pub cpu_percent: Option<f64>,
+    pub memory_bytes: Option<u64>,
 }
 
 /// One clipboard event in the wire format. `content` is `null` unless the
@@ -149,6 +163,17 @@ mod tests {
             ],
             total_copy_bytes: 61546,
             sensitive_hits: 1,
+            running_processes: vec![RunningProcessReport {
+                name: "chrome.exe".to_string(),
+                pid: 1234,
+                cpu_percent: Some(2.5),
+                memory_bytes: Some(524_288_000),
+            }],
+            folder_writes: vec![FolderWrite {
+                folder: "C:\\Users\\johann\\Documents".to_string(),
+                write_count: 42,
+                last_write_at: event_ts,
+            }],
         };
 
         let json = serde_json::to_value(&payload).unwrap();
@@ -179,5 +204,22 @@ mod tests {
 
         assert_eq!(json["total_copy_bytes"], 61546);
         assert_eq!(json["sensitive_hits"], 1);
+
+        assert_eq!(json["running_processes"][0]["name"], "chrome.exe");
+        assert_eq!(json["running_processes"][0]["pid"], 1234);
+        assert_eq!(json["running_processes"][0]["cpu_percent"], 2.5);
+        assert_eq!(
+            json["running_processes"][0]["memory_bytes"],
+            524_288_000i64
+        );
+        assert_eq!(
+            json["folder_writes"][0]["folder"],
+            "C:\\Users\\johann\\Documents"
+        );
+        assert_eq!(json["folder_writes"][0]["write_count"], 42);
+        assert_eq!(
+            json["folder_writes"][0]["last_write_at"],
+            "2026-08-21T08:05:12Z"
+        );
     }
 }

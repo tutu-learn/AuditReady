@@ -76,13 +76,11 @@ install -m 755 "$TMP_DIR/auditready/auditready" "$INSTALL_DIR/auditready"
 echo "Installed auditready to ${INSTALL_DIR}/auditready"
 
 # Install helper scripts if present in the release archive.
+# (update.sh is Linux-only — systemd and .tar.gz assets — so it is never
+# bundled into or installed from the macOS zip.)
 if [ -f "$TMP_DIR/auditready/restart-macos.sh" ]; then
     install -m 755 "$TMP_DIR/auditready/restart-macos.sh" "$INSTALL_DIR/auditready-restart"
     echo "Installed auditready-restart to ${INSTALL_DIR}/auditready-restart"
-fi
-if [ -f "$TMP_DIR/auditready/update.sh" ]; then
-    install -m 755 "$TMP_DIR/auditready/update.sh" "$INSTALL_DIR/auditready-update"
-    echo "Installed auditready-update to ${INSTALL_DIR}/auditready-update"
 fi
 
 # Prepare config directory.

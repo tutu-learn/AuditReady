@@ -3,7 +3,7 @@
 
 mod clipboard;
 mod file_scan;
-mod report;
+pub(crate) mod report;
 mod runner;
 mod sensitive;
 

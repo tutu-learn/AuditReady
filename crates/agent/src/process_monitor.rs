@@ -118,6 +118,39 @@ fn build_event(pid: Pid, proc: &Process, engine: &RulesEngine, now: DateTime<Utc
     }
 }
 
+// ── Client report: lightweight process list ─────────────────────────────────
+
+/// Point-in-time list of running processes for the client report: no rules
+/// engine and no kills — just name, pid, CPU and memory usage. CPU usage is
+/// computed from the delta between two refreshes (~200 ms apart). Returned
+/// busiest-by-CPU first and capped at 300 rows (the server caps at 300 too).
+pub fn running_list() -> Vec<crate::client::report::RunningProcessReport> {
+    use sysinfo::{ProcessesToUpdate, System};
+
+    let mut sys = System::new();
+    sys.refresh_processes(ProcessesToUpdate::All);
+    std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+    sys.refresh_processes(ProcessesToUpdate::All);
+
+    let mut out: Vec<crate::client::report::RunningProcessReport> = sys
+        .processes()
+        .values()
+        .map(|p| crate::client::report::RunningProcessReport {
+            name: p.name().to_string_lossy().to_string(),
+            pid: p.pid().as_u32(),
+            cpu_percent: Some(f64::from(p.cpu_usage())),
+            memory_bytes: Some(p.memory()),
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        b.cpu_percent
+            .partial_cmp(&a.cpu_percent)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    out.truncate(300);
+    out
+}
+
 // ── Platform implementations ──────────────────────────────────────────────────
 
 /// macOS / Linux: elevation via ESF / procfs UID (effective user id == root)

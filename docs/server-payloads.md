@@ -92,8 +92,9 @@ new** — always present, but may be an empty array.
 
 ## 2. Client mode — `POST /audit_ready/client-report`
 
-Sent every `client.report_interval_seconds` (default 1800) by the per-user
-instance (`--mode client`). **`disks` is new here too.**
+Sent every `client.report_interval_seconds` (default 300) by the per-user
+instance (`--mode client`); the first report goes out immediately at startup.
+**`disks` is new here too.**
 
 ```json
 {
@@ -127,7 +128,15 @@ instance (`--mode client`). **`disks` is new here too.**
   ],
 
   "total_copy_bytes": 61546,
-  "sensitive_hits": 1
+  "sensitive_hits": 1,
+
+  "running_processes": [
+    { "name": "chrome.exe", "pid": 1234, "cpu_percent": 2.5, "memory_bytes": 524288000 }
+  ],
+
+  "folder_writes": [
+    { "folder": "C:\\Users\\johann\\Documents", "write_count": 42, "last_write_at": "2026-08-24T08:05:12Z" }
+  ]
 }
 ```
 
@@ -145,6 +154,13 @@ instance (`--mode client`). **`disks` is new here too.**
   `api_key`, `private_key`, `password`. `masked` keeps only the first/last
   2 characters.
 - `changed_files` — capped at 500 entries, most recent first.
+- `running_processes` — processes running at report time; CPU usage is
+  computed from a double refresh (~200 ms apart). Busiest-by-CPU first,
+  capped at 300 entries (the server cap).
+- `folder_writes` — per-folder write counts aggregated from the full file
+  scan (before the `changed_files` cap), busiest first, capped at 500
+  folders. `write_count` counts files changed under the folder during the
+  period; `last_write_at` is the newest change.
 - All timestamps are RFC 3339 UTC (`...Z`).
 
 ## Server-side change

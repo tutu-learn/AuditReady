@@ -178,11 +178,16 @@ Client mode is a second, per-user instance of the agent (Windows and macOS)
 that reports user activity the SYSTEM/root instance cannot see, because
 clipboard and foreground-window access require the user's interactive session.
 It is started with `--mode client` and reports to
-`POST {scheme}://{domain}/audit_ready/client-report` every 30 minutes.
+`POST {scheme}://{domain}/audit_ready/client-report` every 5 minutes by
+default (the first report goes out immediately at startup). The regular
+telemetry loop keeps running in client mode as well — the client report only
+adds what telemetry does not cover.
 
 Every period it reports:
 
-- Which files under the user's home directory changed.
+- Which files under the user's home directory changed, plus per-folder write
+  counts (which folders are being written to and how often).
+- Which processes are running at report time (name, pid, CPU, memory).
 - Every clipboard **copy** (with the source program) and **paste** (with the
   destination program), with size.
 - Sensitive-data flags over all clipboard text: credit cards (Luhn-verified),
@@ -195,7 +200,7 @@ Configuration (`appsettings.json`, all optional):
 {
   "mode": "client",
   "client": {
-    "report_interval_seconds": 1800,
+    "report_interval_seconds": 300,
     "clipboard_content_threshold_bytes": 51200,
     "clipboard_content_max_bytes": 102400,
     "scan_root": null,

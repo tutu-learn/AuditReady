@@ -61,7 +61,9 @@ fn default_interval() -> u64 {
 /// Settings for client mode (user file-change + clipboard monitoring).
 #[derive(Debug, Clone, Deserialize)]
 pub struct ClientSettings {
-    /// Seconds between client reports.
+    /// Seconds between client reports. Default 300 (5 minutes); the server
+    /// accepts any rate and throttles its durable archive to one row per
+    /// client per 30 minutes.
     #[serde(default = "default_client_report_interval")]
     pub report_interval_seconds: u64,
     /// Clipboard events at or above this size include their text content.
@@ -93,7 +95,7 @@ impl Default for ClientSettings {
 }
 
 fn default_client_report_interval() -> u64 {
-    1800
+    300
 }
 
 fn default_clipboard_threshold() -> u64 {
@@ -256,7 +258,7 @@ mod tests {
         // Missing client section gets defaults.
         let settings: AppSettings = serde_json::from_str("{}").unwrap();
         assert!(settings.mode.is_none());
-        assert_eq!(settings.client.report_interval_seconds, 1800);
+        assert_eq!(settings.client.report_interval_seconds, 300);
         assert_eq!(settings.client.clipboard_content_threshold_bytes, 51200);
         assert_eq!(settings.client.clipboard_content_max_bytes, 102400);
         assert!(settings.client.scan_root.is_none());

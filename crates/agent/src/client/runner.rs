@@ -8,8 +8,9 @@ use std::thread;
 use std::time::{Duration, SystemTime};
 
 /// Run client mode: monitor the clipboard, scan the user's files, and POST a
-/// report every `report_interval_seconds`. Loops forever; errors are logged
-/// and the loop continues.
+/// report every `report_interval_seconds`. The first report goes out
+/// immediately at startup so the server sees this machine right away; errors
+/// are logged and the loop continues.
 pub fn run(settings: &ClientSettings, domain: &str, token: &str) -> anyhow::Result<()> {
     let events = clipboard::start();
     let endpoint = report::build_endpoint(domain);
@@ -26,8 +27,6 @@ pub fn run(settings: &ClientSettings, domain: &str, token: &str) -> anyhow::Resu
     let mut period_start = Utc::now();
 
     loop {
-        thread::sleep(Duration::from_secs(settings.report_interval_seconds));
-
         let period_end = Utc::now();
 
         // Drain clipboard events collected during the period.
@@ -65,10 +64,11 @@ pub fn run(settings: &ClientSettings, domain: &str, token: &str) -> anyhow::Resu
             });
         }
 
-        // Files changed since the last report.
-        let changed_files = scan_root
+        // Files changed since the last report, plus per-folder write counts
+        // aggregated over the full scan (not clipped by the file-list cap).
+        let (changed_files, folder_writes) = scan_root
             .as_deref()
-            .map(|root| file_scan::changed_since(root, watermark, &settings.excluded_dirs))
+            .map(|root| file_scan::scan(root, watermark, &settings.excluded_dirs))
             .unwrap_or_default();
         watermark = SystemTime::now();
 
@@ -80,6 +80,8 @@ pub fn run(settings: &ClientSettings, domain: &str, token: &str) -> anyhow::Resu
             disks: crate::collector::disks(),
             changed_files,
             clipboard_events,
+            running_processes: crate::process_monitor::running_list(),
+            folder_writes,
             total_copy_bytes,
             sensitive_hits,
         };
@@ -96,6 +98,8 @@ pub fn run(settings: &ClientSettings, domain: &str, token: &str) -> anyhow::Resu
                 e
             ),
         }
+
+        thread::sleep(Duration::from_secs(settings.report_interval_seconds));
     }
 }
 
