@@ -1,10 +1,12 @@
 use super::clipboard::{self, EventKind};
+use super::mouse;
 use super::report::{self, ClientReport, ClipboardEventReport};
 use super::{file_scan, sensitive};
 use crate::cmd::CommandExtNoWindow;
 use crate::config::ClientSettings;
 use chrono::Utc;
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::{Duration, SystemTime};
 
@@ -14,6 +16,7 @@ use std::time::{Duration, SystemTime};
 /// are logged and the loop continues.
 pub fn run(settings: &ClientSettings, domain: &str, token: &str) -> anyhow::Result<()> {
     let events = clipboard::start();
+    let mouse_events = mouse::start();
     let endpoint = report::build_endpoint(domain);
     let scan_root = settings
         .scan_root
@@ -85,6 +88,8 @@ pub fn run(settings: &ClientSettings, domain: &str, token: &str) -> anyhow::Resu
             folder_writes,
             total_copy_bytes,
             sensitive_hits,
+            // Swap to 0 so each report carries only this period's count.
+            mouse_event_count: mouse_events.swap(0, Ordering::Relaxed),
         };
         period_start = period_end;
 

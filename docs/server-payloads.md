@@ -129,6 +129,7 @@ instance (`--mode client`); the first report goes out immediately at startup.
 
   "total_copy_bytes": 61546,
   "sensitive_hits": 1,
+  "mouse_event_count": 12,
 
   "running_processes": [
     { "name": "chrome.exe", "pid": 1234, "cpu_percent": 2.5, "memory_bytes": 524288000 }
@@ -161,6 +162,11 @@ instance (`--mode client`); the first report goes out immediately at startup.
   scan (before the `changed_files` cap), busiest first, capped at 500
   folders. `write_count` counts files changed under the folder during the
   period; `last_write_at` is the newest change.
+- `mouse_event_count` — mouse-movement events counted during the period,
+  throttled to at most one per 100 ms so a drag stays a small number; an
+  activity signal like the clipboard counters. Always present from agents
+  that support it; 0 on platforms without mouse monitoring (Linux) or when
+  the macOS Accessibility permission is missing.
 - All timestamps are RFC 3339 UTC (`...Z`).
 
 ## Server-side change
@@ -177,3 +183,6 @@ DiskEntry {
 ```
 
 Make it optional/defaulted — older agents in the field don't send it yet.
+
+The same applies to `mouse_event_count: u64` on the client-report payload:
+default it to 0 — older agents don't send it.

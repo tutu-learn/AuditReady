@@ -24,6 +24,10 @@ pub struct ClientReport {
     pub folder_writes: Vec<FolderWrite>,
     pub total_copy_bytes: u64,
     pub sensitive_hits: u64,
+    /// Mouse-movement events counted during the period (throttled); an
+    /// activity signal like the clipboard counters. 0 on platforms without
+    /// mouse support.
+    pub mouse_event_count: u64,
 }
 
 /// One running process in the wire format. `cpu_percent`/`memory_bytes` are
@@ -163,6 +167,7 @@ mod tests {
             ],
             total_copy_bytes: 61546,
             sensitive_hits: 1,
+            mouse_event_count: 12,
             running_processes: vec![RunningProcessReport {
                 name: "chrome.exe".to_string(),
                 pid: 1234,
@@ -204,6 +209,7 @@ mod tests {
 
         assert_eq!(json["total_copy_bytes"], 61546);
         assert_eq!(json["sensitive_hits"], 1);
+        assert_eq!(json["mouse_event_count"], 12);
 
         assert_eq!(json["running_processes"][0]["name"], "chrome.exe");
         assert_eq!(json["running_processes"][0]["pid"], 1234);
