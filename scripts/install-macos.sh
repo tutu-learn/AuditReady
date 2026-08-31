@@ -228,6 +228,18 @@ EOF
     echo "  Without it, only clipboard copy events are reported."
 fi
 
+# A re-run without MODE=client leaves a previously installed client
+# LaunchAgent in place, but the config write above reset it to root-only —
+# restore the staff-readable permissions or the client agent dies with EACCES.
+if [ "${MODE:-agent}" != "client" ] && [ -f "$CLIENT_PLIST_PATH" ]; then
+    chgrp staff "$CONFIG_DIR/appsettings.json"
+    chmod 640 "$CONFIG_DIR/appsettings.json"
+    touch "${CONFIG_DIR}/auditready-client.log"
+    chgrp staff "${CONFIG_DIR}/auditready-client.log"
+    chmod 664 "${CONFIG_DIR}/auditready-client.log"
+    echo "Existing client-mode install detected; kept config and client log staff-accessible."
+fi
+
 if launchctl start "$PLIST_LABEL" 2>/dev/null; then
     echo ""
     echo "AuditReady is installed and running as root."
