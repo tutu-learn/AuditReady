@@ -1,3 +1,5 @@
+use crate::client::stats::SharedStats;
+use crate::client::{alerts, stats};
 use crate::collector;
 use crate::iis::{IisCache, IisSection};
 use crate::models::{AuditReport, DiskEntry};
@@ -116,12 +118,15 @@ const MAX_CONNECTIONS: usize = 200;
 /// `pending_updates` carries the cached pending-update snapshot; until the
 /// first successful collection it holds `None` and the field is omitted.
 /// `iis` works the same way for the IIS website inventory (Windows only).
+/// `stats`, when set (client mode only), receives running-process/network
+/// counts each cycle and gates the connection-lost/restored notifications.
 pub fn run(
     domain: &str,
     interval_secs: u64,
     token: Option<&str>,
     pending_updates: Arc<PendingUpdatesCache>,
     iis: Arc<IisCache>,
+    stats: Option<SharedStats>,
 ) -> anyhow::Result<()> {
     let engine = RulesEngine::new(
         vec![
@@ -137,8 +142,29 @@ pub fn run(
 
     loop {
         match push_snapshot(&engine, &endpoint, token, &dns_capture, &pending_updates, &iis) {
-            Ok(()) => println!("[{}] Telemetry posted", Utc::now().format("%Y-%m-%d %H:%M:%S UTC")),
-            Err(e) => eprintln!("[{}] Telemetry failed: {}", Utc::now().format("%Y-%m-%d %H:%M:%S UTC"), e),
+            Ok(payload) => {
+                println!("[{}] Telemetry posted", Utc::now().format("%Y-%m-%d %H:%M:%S UTC"));
+                if let Some(stats) = &stats {
+                    let processes = payload.running_processes.as_ref();
+                    let alert = stats::record_telemetry(
+                        stats,
+                        processes.map(|p| p.total).unwrap_or(0),
+                        processes.map(|p| p.flagged).unwrap_or(0),
+                        payload
+                            .network_traffic
+                            .as_ref()
+                            .map(|n| n.connections.len())
+                            .unwrap_or(0),
+                    );
+                    alerts::fire(alert);
+                }
+            }
+            Err(e) => {
+                eprintln!("[{}] Telemetry failed: {}", Utc::now().format("%Y-%m-%d %H:%M:%S UTC"), e);
+                if let Some(stats) = &stats {
+                    alerts::fire(stats::record_failure(stats, e.to_string()));
+                }
+            }
         }
         thread::sleep(Duration::from_secs(interval_secs));
     }
@@ -167,7 +193,7 @@ fn push_snapshot(
     dns_capture: &network_monitor::DnsCapture,
     pending_updates: &PendingUpdatesCache,
     iis: &IisCache,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<TelemetryPayload> {
     let report = collector::collect()?;
     let processes = process_monitor::snapshot(engine);
     let network = network_monitor::snapshot(Some(dns_capture));
@@ -190,7 +216,7 @@ fn push_snapshot(
 
     let status = response.status();
     if (200..300).contains(&status) {
-        Ok(())
+        Ok(payload)
     } else {
         Err(anyhow::anyhow!("endpoint returned HTTP {}", status))
     }

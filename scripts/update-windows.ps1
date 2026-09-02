@@ -136,6 +136,7 @@ try {
     if (Get-ScheduledTask -TaskName $clientTaskName -ErrorAction SilentlyContinue) {
         Start-ScheduledTask -TaskName $clientTaskName
         Write-Host "  Client: $clientTaskName restarted."
+        Write-Host "  Its tray icon should reappear in the notification area within a few seconds."
     }
 } finally {
     Remove-Item -Path $TmpDir -Recurse -Force -ErrorAction SilentlyContinue

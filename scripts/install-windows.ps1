@@ -207,6 +207,9 @@ try {
         Register-ScheduledTask -TaskName $ClientTaskName `
             -Action $clientAction -Trigger $clientTrigger -Principal $clientPrincipal -Settings $clientSettings -Force | Out-Null
         Write-Host "Registered per-user client task $ClientTaskName (starts at each user logon)."
+        Write-Host "A tray icon appears in the notification area for the logged-in user;"
+        Write-Host "click it to open the stats dashboard. A connection-lost popup shows"
+        Write-Host "if the backend is unreachable for 10 continuous minutes."
     }
 
     Write-Host ""

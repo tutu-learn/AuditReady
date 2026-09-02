@@ -158,5 +158,6 @@ if [ -f "$CLIENT_PLIST_PATH" ]; then
         CONSOLE_UID=$(id -u "$CONSOLE_USER")
         launchctl kickstart -k "gui/${CONSOLE_UID}/${CLIENT_PLIST_LABEL}" 2>/dev/null || true
         echo "Client agent restarted for user ${CONSOLE_USER}."
+        echo "Its tray icon should reappear in the menu bar within a few seconds."
     fi
 fi

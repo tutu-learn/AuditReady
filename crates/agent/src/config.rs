@@ -63,7 +63,8 @@ fn default_interval() -> u64 {
 pub struct ClientSettings {
     /// Seconds between client reports. Default 300 (5 minutes); the server
     /// accepts any rate and throttles its durable archive to one row per
-    /// client per 30 minutes.
+    /// client per 5 minutes (matching this cadence, so archived periods stay
+    /// contiguous for the User Audit away detection).
     #[serde(default = "default_client_report_interval")]
     pub report_interval_seconds: u64,
     /// Clipboard events at or above this size include their text content.

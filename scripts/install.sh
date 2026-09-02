@@ -14,6 +14,11 @@ set -euo pipefail
 #
 # Non-interactive / automated installs:
 #   sudo DOMAIN=api.example.com TOKEN=abc123 ./install.sh
+#
+# This installer only sets up the SYSTEM/root agent. Client mode
+# (--mode client: clipboard/file monitoring, tray icon, dashboard, and
+# connection-lost popup) is Windows/macOS only — see install-windows.ps1 and
+# install-macos.sh.
 
 REPO="tutu-learn/AuditReady"
 VERSION="${VERSION:-latest}"

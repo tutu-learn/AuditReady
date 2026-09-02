@@ -1,6 +1,8 @@
+use super::alerts;
 use super::clipboard::{self, EventKind};
 use super::mouse;
 use super::report::{self, ClientReport, ClipboardEventReport};
+use super::stats::SharedStats;
 use super::{file_scan, sensitive};
 use crate::cmd::CommandExtNoWindow;
 use crate::config::ClientSettings;
@@ -13,8 +15,14 @@ use std::time::{Duration, SystemTime};
 /// Run client mode: monitor the clipboard, scan the user's files, and POST a
 /// report every `report_interval_seconds`. The first report goes out
 /// immediately at startup so the server sees this machine right away; errors
-/// are logged and the loop continues.
-pub fn run(settings: &ClientSettings, domain: &str, token: &str) -> anyhow::Result<()> {
+/// are logged and the loop continues. `stats` feeds the tray/dashboard UI and
+/// gates the connection-lost/restored desktop notifications.
+pub fn run(
+    settings: &ClientSettings,
+    domain: &str,
+    token: &str,
+    stats: SharedStats,
+) -> anyhow::Result<()> {
     let events = clipboard::start();
     let mouse_events = mouse::start();
     let endpoint = report::build_endpoint(domain);
@@ -76,6 +84,10 @@ pub fn run(settings: &ClientSettings, domain: &str, token: &str) -> anyhow::Resu
             .unwrap_or_default();
         watermark = SystemTime::now();
 
+        let mouse_event_count = mouse_events.swap(0, Ordering::Relaxed);
+        let clipboard_event_count = clipboard_events.len() as u64;
+        let files_scanned_count = changed_files.len() as u64;
+
         let payload = ClientReport {
             hostname: hostname(),
             username: username(),
@@ -89,20 +101,36 @@ pub fn run(settings: &ClientSettings, domain: &str, token: &str) -> anyhow::Resu
             total_copy_bytes,
             sensitive_hits,
             // Swap to 0 so each report carries only this period's count.
-            mouse_event_count: mouse_events.swap(0, Ordering::Relaxed),
+            mouse_event_count,
         };
         period_start = period_end;
 
+        let next_report_at = Utc::now()
+            + chrono::Duration::seconds(settings.report_interval_seconds as i64);
         match report::post(&endpoint, Some(token), &payload) {
-            Ok(()) => println!(
-                "[{}] Client report posted",
-                Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
-            ),
-            Err(e) => eprintln!(
-                "[{}] Client report failed: {}",
-                Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
-                e
-            ),
+            Ok(()) => {
+                println!(
+                    "[{}] Client report posted",
+                    Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+                );
+                let alert = super::stats::record_client_report(
+                    &stats,
+                    next_report_at,
+                    clipboard_event_count,
+                    mouse_event_count,
+                    files_scanned_count,
+                    sensitive_hits,
+                );
+                alerts::fire(alert);
+            }
+            Err(e) => {
+                eprintln!(
+                    "[{}] Client report failed: {}",
+                    Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
+                    e
+                );
+                alerts::fire(super::stats::record_failure(&stats, e.to_string()));
+            }
         }
 
         thread::sleep(Duration::from_secs(settings.report_interval_seconds));

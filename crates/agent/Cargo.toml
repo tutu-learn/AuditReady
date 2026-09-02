@@ -29,6 +29,19 @@ uuid = { version = "1", features = ["v4", "serde"] }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# Client-mode tray icon + stats dashboard + connection-lost popup. Windows and
+# macOS only, matching where client mode's clipboard/mouse monitoring already
+# works (see crates/agent/src/client/clipboard, client/mouse). tray-icon/muda
+# pull in GTK + libappindicator + libxdo on Linux, which don't build against
+# the static-musl target the Linux release uses — see client/ui.rs's doc
+# comment. Keeping these out of the Linux dependency graph entirely avoids
+# that instead of trying to make it link.
+[target.'cfg(any(target_os = "macos", windows))'.dependencies]
+iced = { version = "0.14.0", features = ["tokio", "advanced"] }
+tray-icon = "0.24.2"
+muda = "0.19.3"
+rfd = "0.17.2"
+
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
 windows = { version = "0.58", features = [

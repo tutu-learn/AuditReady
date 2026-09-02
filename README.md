@@ -234,6 +234,32 @@ above `clipboard_content_threshold_bytes` (default 50 KB), truncated to
 `clipboard_content_max_bytes` (default 100 KB). Smaller copies and pastes are
 reported as metadata (time, program, size, sensitive-data flags) only.
 
+### Tray icon, dashboard, and connection alerts (Windows and macOS)
+
+Client mode shows a tray icon in the user's menu bar / notification area, so
+it's visible that it's running:
+
+- Left-click the tray icon to open a small dashboard window: connection
+  status, last/next report time, cumulative clipboard/mouse/file/
+  sensitive-hit counters, and the latest running-process/network counts.
+  Right-click for a menu with the same "Open Dashboard" option plus "Quit".
+- If the client report or telemetry push can't reach the backend for **10
+  continuous minutes**, a modal "connection lost" popup appears (the user
+  must click OK) — no matter what they're doing, since it's a real dialog
+  box rather than a suppressible OS notification banner. Short outages under
+  10 minutes never surface a popup. A "connection restored" popup follows
+  once reporting resumes, but only if the lost-connection popup actually
+  fired.
+- Choosing "Quit" from the tray menu exits the process; under the installed
+  LaunchAgent (macOS, `KeepAlive`) or scheduled task (Windows), it restarts
+  immediately, same as any other unexpected exit.
+
+This is Windows- and macOS-only, same as the clipboard/mouse monitoring
+itself: the underlying tray/dialog libraries pull in GTK on Linux, which
+doesn't fit the statically-linked musl build the Linux release uses. A
+manually-started `--mode client` on Linux runs headless (logs a warning
+instead of showing the UI) rather than failing to build or start.
+
 ## Managing the agent (Linux)
 
 ```bash

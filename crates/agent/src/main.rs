@@ -157,6 +157,15 @@ async fn main() -> Result<()> {
         std::thread::spawn(move || iis::run_refresher(cache));
     }
 
+    // Client mode gets a shared stats handle feeding the tray/dashboard UI
+    // and connection-lost/restored desktop notifications; agent mode has no
+    // UI to feed, so it stays None.
+    let client_stats = if mode == "client" {
+        Some(client::stats::new_shared())
+    } else {
+        None
+    };
+
     // Push telemetry. Runs in a blocking task because publisher::run is
     // synchronous and loops forever.
     let push_interval = settings.server.interval_seconds;
@@ -164,8 +173,9 @@ async fn main() -> Result<()> {
     let push_token = token.clone();
     let push_cache = pending_cache.clone();
     let push_iis = iis_cache.clone();
+    let push_stats = client_stats.clone();
     tokio::task::spawn_blocking(move || {
-        if let Err(e) = publisher::run(&push_domain, push_interval, Some(&push_token), push_cache, push_iis) {
+        if let Err(e) = publisher::run(&push_domain, push_interval, Some(&push_token), push_cache, push_iis, push_stats) {
             tracing::error!("telemetry publisher failed: {}", e);
         }
     });
@@ -200,18 +210,37 @@ async fn main() -> Result<()> {
         let client_settings = settings.client.clone();
         let client_domain = domain.clone();
         let client_token = token.clone();
+        let client_stats = client_stats.clone().expect("client_stats set for client mode");
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = client::run(&client_settings, &client_domain, &client_token) {
+            if let Err(e) = client::run(&client_settings, &client_domain, &client_token, client_stats) {
                 tracing::error!("client mode failed: {}", e);
             }
         });
     }
 
-    // Default: silent mode. Keep the process alive and refresh network state.
-    let dns_capture = network_monitor::DnsCapture::start();
+    // Background network-state refresh, common to both modes.
+    tokio::spawn(async {
+        let dns_capture = network_monitor::DnsCapture::start();
+        loop {
+            let _ = network_monitor::snapshot(Some(&dns_capture));
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    });
+
+    // Client mode: run the tray icon + stats dashboard on this thread (the
+    // real process main thread, required by the tray icon on macOS). This
+    // blocks until the user quits from the tray menu.
+    if mode == "client" {
+        let client_stats = client_stats.expect("client_stats set for client mode");
+        if let Err(e) = client::ui::run(client_stats) {
+            tracing::error!("client tray/dashboard UI failed: {}", e);
+        }
+        return Ok(());
+    }
+
+    // Agent mode: no UI, just keep the process alive.
     loop {
-        let _ = network_monitor::snapshot(Some(&dns_capture));
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        tokio::time::sleep(Duration::from_secs(60)).await;
     }
 }
 

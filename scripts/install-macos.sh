@@ -226,6 +226,10 @@ EOF
     echo "  Grant it to ${INSTALL_DIR}/auditready under"
     echo "  System Settings > Privacy & Security > Accessibility."
     echo "  Without it, only clipboard copy events are reported."
+    echo ""
+    echo "A tray icon should appear in the menu bar for the logged-in user;"
+    echo "click it to open the stats dashboard. A connection-lost popup shows"
+    echo "if the backend is unreachable for 10 continuous minutes."
 fi
 
 # A re-run without MODE=client leaves a previously installed client
