@@ -15,8 +15,7 @@ use anyhow::Result;
 use std::sync::Arc;
 use std::time::Duration;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let args: Vec<String> = std::env::args().collect();
@@ -67,14 +66,17 @@ async fn main() -> Result<()> {
     // --print-dns: capture live DNS traffic for a few seconds, print the
     // captured queries as JSON, then exit. Requires root (packet capture).
     if args.iter().any(|a| a == "--print-dns") {
-        let capture = network_monitor::DnsCapture::start();
-        // Give the capture thread a moment to attach before traffic arrives.
-        tokio::time::sleep(Duration::from_secs(2)).await;
-        println!("Capturing DNS traffic for 10 seconds (generate some lookups)...");
-        tokio::time::sleep(Duration::from_secs(10)).await;
-        let queries = capture.drain();
-        println!("{}", serde_json::to_string_pretty(&queries)?);
-        return Ok(());
+        let rt = tokio::runtime::Runtime::new()?;
+        return rt.block_on(async {
+            let capture = network_monitor::DnsCapture::start();
+            // Give the capture thread a moment to attach before traffic arrives.
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            println!("Capturing DNS traffic for 10 seconds (generate some lookups)...");
+            tokio::time::sleep(Duration::from_secs(10)).await;
+            let queries = capture.drain();
+            println!("{}", serde_json::to_string_pretty(&queries)?);
+            Ok(())
+        });
     }
 
     // --software: print the full inventory and exit
@@ -129,6 +131,36 @@ async fn main() -> Result<()> {
         detach_owned_console();
     }
 
+    // Everything from here on needs an async runtime to spawn tasks, but the
+    // tray icon (below) must run on the real OS main thread with no Tokio
+    // runtime entered on it — iced's own (tokio-backed) executor panics with
+    // "Cannot start a runtime from within a runtime" otherwise. So: drive
+    // setup and all background tasks to completion inside `block_on`, then
+    // drop back to this bare thread for the UI. `rt` is kept alive across
+    // that so the already-spawned background tasks keep running.
+    let rt = tokio::runtime::Runtime::new()?;
+    let client_stats = rt.block_on(async_setup(settings, mode))?;
+
+    // Client mode: run the tray icon + stats dashboard on this thread (the
+    // real process main thread, required by the tray icon on macOS). This
+    // blocks until the user quits from the tray menu.
+    if let Some(client_stats) = client_stats {
+        if let Err(e) = client::ui::run(client_stats) {
+            tracing::error!("client tray/dashboard UI failed: {}", e);
+        }
+    }
+
+    Ok(())
+}
+
+/// Resolves config, spawns every background task (telemetry, patch jobs,
+/// tunnel, client-mode monitors, network refresh), and returns the client
+/// stats handle for the tray UI — or blocks forever for agent mode, which
+/// has no UI of its own. Must run inside a Tokio runtime.
+async fn async_setup(
+    settings: config::AppSettings,
+    mode: String,
+) -> Result<Option<client::stats::SharedStats>> {
     // Shared backend config is required for either push or tunnel.
     let domain = settings
         .server
@@ -227,18 +259,14 @@ async fn main() -> Result<()> {
         }
     });
 
-    // Client mode: run the tray icon + stats dashboard on this thread (the
-    // real process main thread, required by the tray icon on macOS). This
-    // blocks until the user quits from the tray menu.
+    // Client mode: the tray icon + stats dashboard is run by the caller, on
+    // the real process main thread (required on macOS). Hand back the stats
+    // handle instead of driving it here.
     if mode == "client" {
-        let client_stats = client_stats.expect("client_stats set for client mode");
-        if let Err(e) = client::ui::run(client_stats) {
-            tracing::error!("client tray/dashboard UI failed: {}", e);
-        }
-        return Ok(());
+        return Ok(client_stats);
     }
 
-    // Agent mode: no UI, just keep the process alive.
+    // Agent mode: no UI, just keep the process (and this runtime) alive.
     loop {
         tokio::time::sleep(Duration::from_secs(60)).await;
     }
