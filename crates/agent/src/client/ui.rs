@@ -345,24 +345,39 @@ mod supported {
         .into()
     }
 
-    /// A small solid-color circle used as the tray icon. Generated in code
-    /// so the build doesn't need a bundled asset file.
+    /// A blocky "S" (SEBRUS::OPS) in the theme cyan, used as the tray icon.
+    /// Rasterized from a 5x7 pixel-font bitmap so the build doesn't need a
+    /// bundled asset file.
     fn tray_icon_image() -> tray_icon::Icon {
         const SIZE: u32 = 32;
+        const SCALE: u32 = 4;
+        const GLYPH: [&str; 7] = [
+            ".###.",
+            "#...#",
+            "#....",
+            ".###.",
+            "....#",
+            "#...#",
+            ".###.",
+        ];
+        let offset_x = (SIZE - 5 * SCALE) / 2;
+        let offset_y = (SIZE - 7 * SCALE) / 2;
         let mut rgba = vec![0u8; (SIZE * SIZE * 4) as usize];
-        let center = SIZE as f32 / 2.0;
-        let radius = center - 2.0;
-        for y in 0..SIZE {
-            for x in 0..SIZE {
-                let dx = x as f32 + 0.5 - center;
-                let dy = y as f32 + 0.5 - center;
-                let idx = ((y * SIZE + x) * 4) as usize;
-                if dx * dx + dy * dy <= radius * radius {
-                    // SEBRUS::OPS cyan, matching the dashboard accent color.
-                    rgba[idx] = 0x3f;
-                    rgba[idx + 1] = 0xe0;
-                    rgba[idx + 2] = 0xff;
-                    rgba[idx + 3] = 0xff;
+        for (gy, row) in GLYPH.iter().enumerate() {
+            for (gx, ch) in row.chars().enumerate() {
+                if ch != '#' {
+                    continue;
+                }
+                for dy in 0..SCALE {
+                    for dx in 0..SCALE {
+                        let x = offset_x + gx as u32 * SCALE + dx;
+                        let y = offset_y + gy as u32 * SCALE + dy;
+                        let idx = ((y * SIZE + x) * 4) as usize;
+                        rgba[idx] = 0x3f;
+                        rgba[idx + 1] = 0xe0;
+                        rgba[idx + 2] = 0xff;
+                        rgba[idx + 3] = 0xff;
+                    }
                 }
             }
         }
