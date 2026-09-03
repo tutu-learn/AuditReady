@@ -35,7 +35,65 @@ mod supported {
     use crate::client::stats::SharedStats;
     use iced::widget::{column, container, row, text};
     use iced::window;
-    use iced::{Element, Length, Subscription, Task, Theme};
+    use iced::{Background, Border, Color, Element, Font, Length, Subscription, Task, Theme};
+
+    // SEBRUS::OPS ops-console palette (matches the web dashboard).
+    const BG: Color = Color::from_rgb8(0x03, 0x06, 0x0c);
+    const PANEL: Color = Color::from_rgb8(0x0a, 0x0f, 0x1c);
+    const BORDER: Color = Color::from_rgb8(0x1a, 0x24, 0x38);
+    const TEXT: Color = Color::from_rgb8(0xe8, 0xef, 0xff);
+    const DIM: Color = Color::from_rgb8(0x5f, 0x6e, 0x8c);
+    const CYAN: Color = Color::from_rgb8(0x3f, 0xe0, 0xff);
+    const GREEN: Color = Color::from_rgb8(0x4f, 0xf3, 0x9a);
+    const RED: Color = Color::from_rgb8(0xff, 0x5f, 0x7a);
+    const AMBER: Color = Color::from_rgb8(0xff, 0xb5, 0x47);
+    const MONO: Font = Font::MONOSPACE;
+
+    fn sebrus_theme() -> Theme {
+        Theme::custom(
+            "SebrusOps".to_string(),
+            iced::theme::Palette {
+                background: BG,
+                text: TEXT,
+                primary: CYAN,
+                success: GREEN,
+                warning: AMBER,
+                danger: RED,
+            },
+        )
+    }
+
+    fn root_style(_theme: &Theme) -> container::Style {
+        container::Style {
+            background: Some(Background::Color(BG)),
+            text_color: Some(TEXT),
+            ..container::Style::default()
+        }
+    }
+
+    fn tile_style(_theme: &Theme) -> container::Style {
+        container::Style {
+            background: Some(Background::Color(PANEL)),
+            border: Border {
+                color: BORDER,
+                width: 1.0,
+                radius: 3.0.into(),
+            },
+            ..container::Style::default()
+        }
+    }
+
+    fn chip_style(color: Color) -> impl Fn(&Theme) -> container::Style {
+        move |_| container::Style {
+            background: Some(Background::Color(PANEL)),
+            border: Border {
+                color,
+                width: 1.0,
+                radius: 3.0.into(),
+            },
+            ..container::Style::default()
+        }
+    }
     use muda::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
     use std::time::Duration;
     use tray_icon::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
@@ -65,7 +123,7 @@ mod supported {
         iced::daemon(move || boot(stats.clone()), update, view)
             .subscription(subscription)
             .title(|_state: &State, _id| "AuditReady — Client Dashboard".to_string())
-            .theme(|_state: &State, _id| Theme::Dark)
+            .theme(|_state: &State, _id| sebrus_theme())
             .run()
     }
 
@@ -168,12 +226,6 @@ mod supported {
     fn view(state: &State, _id: window::Id) -> Element<'_, Message> {
         let s = &state.snapshot;
 
-        let status_line = if s.connected {
-            text("● Connected").size(18)
-        } else {
-            text("● Disconnected").size(18)
-        };
-
         let last_report = s
             .last_report_at
             .map(|t| t.format("%Y-%m-%d %H:%M:%S UTC").to_string())
@@ -184,58 +236,112 @@ mod supported {
             .unwrap_or_else(|| "—".to_string());
 
         let mut content = column![
-            text("AuditReady Client").size(22),
-            status_line,
-            text(format!("Last report: {}", last_report)),
-            text(format!("Next report: {}", next_report)),
+            row![
+                text("AUDITREADY").size(18).font(MONO).color(CYAN),
+                text("::").size(18).font(MONO).color(DIM),
+                text("CLIENT").size(18).font(MONO).color(TEXT),
+            ],
+            status_chip(s.connected),
+            meta_row("LAST REPORT", last_report),
+            meta_row("NEXT REPORT", next_report),
         ]
-        .spacing(6);
+        .spacing(10);
 
         if let Some(err) = &s.last_error {
-            content = content.push(text(format!("Last error: {}", err)));
+            content = content.push(
+                text(format!("LAST ERROR  {}", err))
+                    .size(11)
+                    .font(MONO)
+                    .color(RED),
+            );
         }
 
         content = content
-            .push(text(" "))
-            .push(text("Activity (since start)").size(16))
+            .push(section("Activity — since start"))
             .push(
                 row![
-                    stat_tile("Clipboard events", s.clipboard_events),
-                    stat_tile("Mouse events", s.mouse_events),
+                    stat_tile("Clipboard events", s.clipboard_events, CYAN),
+                    stat_tile("Mouse events", s.mouse_events, CYAN),
                 ]
-                .spacing(12),
+                .spacing(10),
             )
             .push(
                 row![
-                    stat_tile("Files scanned", s.files_scanned),
-                    stat_tile("Sensitive hits", s.sensitive_hits),
+                    stat_tile("Files scanned", s.files_scanned, CYAN),
+                    stat_tile(
+                        "Sensitive hits",
+                        s.sensitive_hits,
+                        if s.sensitive_hits > 0 { RED } else { CYAN },
+                    ),
                 ]
-                .spacing(12),
+                .spacing(10),
             )
-            .push(text(" "))
-            .push(text("Processes / network (latest)").size(16))
+            .push(section("Processes / network — latest"))
             .push(
                 row![
-                    stat_tile("Processes", s.total_processes as u64),
-                    stat_tile("Flagged", s.flagged_processes as u64),
-                    stat_tile("Connections", s.network_connections as u64),
+                    stat_tile("Processes", s.total_processes as u64, CYAN),
+                    stat_tile(
+                        "Flagged",
+                        s.flagged_processes as u64,
+                        if s.flagged_processes > 0 { RED } else { CYAN },
+                    ),
+                    stat_tile("Connections", s.network_connections as u64, CYAN),
                 ]
-                .spacing(12),
+                .spacing(10),
             );
 
         container(content)
-            .padding(16)
+            .style(root_style)
+            .padding(18)
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
     }
 
-    fn stat_tile(label: &str, value: u64) -> Element<'static, Message> {
-        column![
-            text(value.to_string()).size(20),
-            text(label.to_string()).size(12)
+    /// Connection status rendered like the web dashboard's status chips.
+    fn status_chip(connected: bool) -> Element<'static, Message> {
+        let (label, color) = if connected {
+            ("● CONNECTED", GREEN)
+        } else {
+            ("● DISCONNECTED", RED)
+        };
+        container(text(label).size(11).font(MONO).color(color))
+            .style(chip_style(color))
+            .padding([6, 10])
+            .into()
+    }
+
+    fn meta_row(label: &'static str, value: String) -> Element<'static, Message> {
+        row![
+            text(label)
+                .size(11)
+                .font(MONO)
+                .color(DIM)
+                .width(Length::Fixed(110.0)),
+            text(value).size(11).font(MONO).color(TEXT),
         ]
-        .spacing(2)
+        .into()
+    }
+
+    fn section(title: &str) -> Element<'static, Message> {
+        text(title.to_uppercase())
+            .size(11)
+            .font(MONO)
+            .color(DIM)
+            .into()
+    }
+
+    fn stat_tile(label: &str, value: u64, accent: Color) -> Element<'static, Message> {
+        container(
+            column![
+                text(value.to_string()).size(22).font(MONO).color(accent),
+                text(label.to_uppercase()).size(10).font(MONO).color(DIM),
+            ]
+            .spacing(4),
+        )
+        .style(tile_style)
+        .padding([10, 12])
+        .width(Length::Fill)
         .into()
     }
 
@@ -252,12 +358,10 @@ mod supported {
                 let dy = y as f32 + 0.5 - center;
                 let idx = ((y * SIZE + x) * 4) as usize;
                 if dx * dx + dy * dy <= radius * radius {
-                    // Blue-ish circle, matches nothing in particular — just
-                    // needs to read clearly as "this app" in a tray full of
-                    // monochrome icons.
-                    rgba[idx] = 0x2f;
-                    rgba[idx + 1] = 0x80;
-                    rgba[idx + 2] = 0xed;
+                    // SEBRUS::OPS cyan, matching the dashboard accent color.
+                    rgba[idx] = 0x3f;
+                    rgba[idx + 1] = 0xe0;
+                    rgba[idx + 2] = 0xff;
                     rgba[idx + 3] = 0xff;
                 }
             }
