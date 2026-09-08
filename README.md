@@ -219,7 +219,18 @@ Install client mode alongside the regular agent:
 
 - Windows: `.\install-windows.ps1 -Domain api.example.com -Token abc123 -ClientMode`
   registers the per-user `AuditReady-Client` scheduled task (runs at each user
-  logon).
+  logon). To add client mode to an **existing** install without reinstalling,
+  run from an elevated PowerShell window:
+
+  ```powershell
+  Invoke-WebRequest `
+    -Uri https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/enable-client-mode-windows.ps1 `
+    -OutFile enable-client-mode-windows.ps1
+  .\enable-client-mode-windows.ps1
+  ```
+
+  This only registers and starts the `AuditReady-Client` task; it does not
+  touch the binary, configuration, or main task.
 - macOS: `sudo MODE=client ./install-macos.sh` additionally installs the
   `com.auditready.client` LaunchAgent. On macOS, **paste** capture requires
   the Accessibility permission granted to the `auditready` binary (System
