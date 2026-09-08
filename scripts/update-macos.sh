@@ -92,15 +92,21 @@ fi
 # Enforce a 5-minute client reporting interval. Updating the binary alone
 # never touches the config, so an install with a slower interval would keep
 # it forever. Rewrites client.report_interval_seconds, preserving all other
-# settings.
+# settings. Failures here are non-fatal — the daemon was unloaded above and
+# must not be left down because of a config hiccup.
 CONFIG_FILE="/etc/auditready/appsettings.json"
 if [ -f "$CONFIG_FILE" ]; then
+    REWRITE_OK=0
     if command -v jq > /dev/null 2>&1; then
-        jq '.client.report_interval_seconds = 300' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp"
-        mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+        if jq '.client.report_interval_seconds = 300' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" 2>/dev/null; then
+            mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+            REWRITE_OK=1
+        else
+            rm -f "${CONFIG_FILE}.tmp"
+        fi
     elif command -v python3 > /dev/null 2>&1; then
         # macOS ships python3 via the CLT; fall back to it when jq is absent.
-        python3 - "$CONFIG_FILE" <<'PY'
+        if python3 - "$CONFIG_FILE" <<'PY'
 import json, sys
 path = sys.argv[1]
 with open(path) as f:
@@ -110,20 +116,33 @@ with open(path, "w") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
 PY
+        then
+            REWRITE_OK=1
+        fi
+    fi
+    if [ "$REWRITE_OK" = "1" ]; then
+        # The client-mode LaunchAgent runs as the logged-in user and must be
+        # able to read this file; keep it staff-readable when client mode is
+        # installed. The jq rewrite replaces the file wholesale, so group and
+        # mode must be (re)applied here or the client agent dies with EACCES.
+        if [ -f "$CLIENT_PLIST_PATH" ]; then
+            chgrp staff "$CONFIG_FILE"
+            chmod 640 "$CONFIG_FILE"
+        else
+            chmod 600 "$CONFIG_FILE"
+        fi
+        echo "Set client.report_interval_seconds = 300 (5 minutes) in ${CONFIG_FILE}"
     else
         # Non-fatal: the binary is already swapped; don't strand the daemon.
-        echo "Neither jq nor python3 available; skipping client interval update." >&2
-        echo "Set \"client\": { \"report_interval_seconds\": 300 } in ${CONFIG_FILE} manually." >&2
+        echo "Config rewrite failed; keeping ${CONFIG_FILE} as-is." >&2
+        echo "Set \"client\": { \"report_interval_seconds\": 300 } manually if needed." >&2
+        # Still repair permissions: a previous installer may have left the
+        # config root-only, which kills the client agent with EACCES.
+        if [ -f "$CLIENT_PLIST_PATH" ]; then
+            chgrp staff "$CONFIG_FILE"
+            chmod 640 "$CONFIG_FILE"
+        fi
     fi
-    # The client-mode LaunchAgent runs as the logged-in user and must be able
-    # to read this file; keep it staff-readable when client mode is installed.
-    if [ -f "$CLIENT_PLIST_PATH" ]; then
-        chgrp staff "$CONFIG_FILE"
-        chmod 640 "$CONFIG_FILE"
-    else
-        chmod 600 "$CONFIG_FILE"
-    fi
-    echo "Set client.report_interval_seconds = 300 (5 minutes) in ${CONFIG_FILE}"
 fi
 
 if [ "$DAEMON_LOADED" = "1" ]; then
@@ -156,7 +175,12 @@ if [ -f "$CLIENT_PLIST_PATH" ]; then
     CONSOLE_USER=$(stat -f '%Su' /dev/console 2>/dev/null || true)
     if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
         CONSOLE_UID=$(id -u "$CONSOLE_USER")
-        launchctl kickstart -k "gui/${CONSOLE_UID}/${CLIENT_PLIST_LABEL}" 2>/dev/null || true
+        # kickstart only works on a loaded service; if the agent died and was
+        # never reloaded (or was disabled), bootstrap it back into the
+        # user's GUI session instead.
+        launchctl kickstart -k "gui/${CONSOLE_UID}/${CLIENT_PLIST_LABEL}" 2>/dev/null \
+            || launchctl bootstrap "gui/${CONSOLE_UID}" "$CLIENT_PLIST_PATH" 2>/dev/null \
+            || true
         echo "Client agent restarted for user ${CONSOLE_USER}."
         echo "Its tray icon should reappear in the menu bar within a few seconds."
     fi
