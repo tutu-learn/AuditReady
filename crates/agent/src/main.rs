@@ -2,6 +2,7 @@ mod client;
 mod cmd;
 mod collector;
 mod config;
+mod deployments;
 mod iis;
 mod jobs;
 mod models;
@@ -9,6 +10,7 @@ mod network_monitor;
 mod pending_updates;
 mod process_monitor;
 mod publisher;
+mod script;
 mod tunnel;
 
 use anyhow::Result;
@@ -227,12 +229,24 @@ async fn async_setup(
         let broker_url = settings
             .broker_url()
             .ok_or_else(|| anyhow::anyhow!("tunnel is enabled but server.domain is not configured"))?;
+        let tunnel_shell = settings.server.tunnel_shell.clone();
+        let tunnel_cwd = settings.server.tunnel_cwd.clone();
         tokio::spawn(tunnel::run(
             broker_url,
             token.clone(),
-            settings.server.tunnel_shell,
-            settings.server.tunnel_cwd,
+            tunnel_shell,
+            tunnel_cwd,
         ));
+    }
+
+    // Dedicated deployment push channel if enabled. Receives script/iis
+    // deployments pushed by the server instead of waiting for the 15s patch-job
+    // poll. Patch jobs stay on their own poller.
+    if settings.server.deployments_enabled {
+        let deployments_url = settings
+            .deployments_url()
+            .ok_or_else(|| anyhow::anyhow!("deployments is enabled but server.domain is not configured"))?;
+        tokio::spawn(deployments::run(deployments_url, token.clone()));
     }
 
     // Client mode: additionally monitor user file changes and clipboard

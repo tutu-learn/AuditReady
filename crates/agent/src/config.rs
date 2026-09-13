@@ -39,6 +39,9 @@ pub struct ServerSettings {
     /// Working directory for tunnel channels. Defaults to the process current directory.
     #[serde(default)]
     pub tunnel_cwd: Option<String>,
+    /// Enable the dedicated deployment push WebSocket channel.
+    #[serde(default)]
+    pub deployments_enabled: bool,
 }
 
 impl Default for ServerSettings {
@@ -50,6 +53,7 @@ impl Default for ServerSettings {
             tunnel_enabled: false,
             tunnel_shell: None,
             tunnel_cwd: None,
+            deployments_enabled: false,
         }
     }
 }
@@ -128,6 +132,15 @@ impl AppSettings {
         self.server.domain.as_deref().map(build_broker_url)
     }
 
+    /// Return the WebSocket URL for the dedicated deployment channel.
+    ///
+    /// Derived from `server.domain`:
+    ///   - `localhost:8000` → `ws://localhost:8000/audit_ready/deployments/ws`
+    ///   - `api.example.com` → `wss://api.example.com/audit_ready/deployments/ws`
+    pub fn deployments_url(&self) -> Option<String> {
+        self.server.domain.as_deref().map(build_deployments_url)
+    }
+
     /// Override settings from environment variables.
     ///
     /// Supported variables (all optional):
@@ -137,6 +150,7 @@ impl AppSettings {
     /// - `AUDITREADY_TUNNEL_ENABLED`
     /// - `AUDITREADY_TUNNEL_SHELL`
     /// - `AUDITREADY_TUNNEL_CWD`
+    /// - `AUDITREADY_DEPLOYMENTS_ENABLED`
     /// - `AUDITREADY_MODE`
     /// - `AUDITREADY_CLIENT_REPORT_INTERVAL_SECONDS`
     /// - `AUDITREADY_CLIENT_CLIPBOARD_THRESHOLD_BYTES`
@@ -169,6 +183,9 @@ impl AppSettings {
                 self.server.tunnel_cwd = Some(v);
             }
         }
+        if let Ok(v) = std::env::var("AUDITREADY_DEPLOYMENTS_ENABLED") {
+            self.server.deployments_enabled = v.parse().unwrap_or(self.server.deployments_enabled);
+        }
         if let Ok(v) = std::env::var("AUDITREADY_MODE") {
             if !v.is_empty() {
                 self.mode = Some(v);
@@ -188,6 +205,14 @@ impl AppSettings {
 }
 
 fn build_broker_url(domain: &str) -> String {
+    build_ws_url(domain, "/audit_ready/tunnel/agent")
+}
+
+fn build_deployments_url(domain: &str) -> String {
+    build_ws_url(domain, "/audit_ready/deployments/ws")
+}
+
+fn build_ws_url(domain: &str, path: &str) -> String {
     let domain = domain.trim();
     if domain.starts_with("ws://") || domain.starts_with("wss://") {
         return domain.trim_end_matches('/').to_string();
@@ -196,7 +221,7 @@ fn build_broker_url(domain: &str) -> String {
         || domain.starts_with("127.")
         || domain == "::1";
     let scheme = if is_local { "ws" } else { "wss" };
-    format!("{}://{}/audit_ready/tunnel/agent", scheme, domain)
+    format!("{}://{}{}", scheme, domain, path)
 }
 
 /// Load settings from the given JSON file.
@@ -285,5 +310,35 @@ mod tests {
         std::env::remove_var("AUDITREADY_MODE");
         std::env::remove_var("AUDITREADY_CLIENT_REPORT_INTERVAL_SECONDS");
         std::env::remove_var("AUDITREADY_CLIENT_CLIPBOARD_THRESHOLD_BYTES");
+    }
+
+    #[test]
+    fn deployments_url_derived_from_domain() {
+        let settings: AppSettings = serde_json::from_str(
+            r#"{"server": {"domain": "localhost:8000", "token": "t"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            settings.deployments_url(),
+            Some("ws://localhost:8000/audit_ready/deployments/ws".to_string())
+        );
+
+        let settings: AppSettings = serde_json::from_str(
+            r#"{"server": {"domain": "api.example.com", "token": "t"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            settings.deployments_url(),
+            Some("wss://api.example.com/audit_ready/deployments/ws".to_string())
+        );
+    }
+
+    #[test]
+    fn deployments_enabled_env_override() {
+        std::env::set_var("AUDITREADY_DEPLOYMENTS_ENABLED", "true");
+        let mut settings = AppSettings::default();
+        settings.apply_env_overrides();
+        assert!(settings.server.deployments_enabled);
+        std::env::remove_var("AUDITREADY_DEPLOYMENTS_ENABLED");
     }
 }

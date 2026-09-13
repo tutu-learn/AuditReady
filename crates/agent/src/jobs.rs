@@ -30,16 +30,7 @@ const SUMMARY_CAP: usize = 1000;
 /// If a reboot doesn't happen within this long after being requested
 /// (e.g. it was cancelled), verify and close the job anyway.
 const REBOOT_STALL: Duration = Duration::from_secs(900);
-/// Max wall-clock time for a Script job before it is killed
-/// (kubeadm upgrades download packages, so keep this generous).
-const SCRIPT_TIMEOUT: Duration = Duration::from_secs(30 * 60);
-/// Interval between progress pings while a Script job runs.
-const SCRIPT_PING_INTERVAL: Duration = Duration::from_secs(30);
-/// Cap for the script output tail sent as `output` (the server caps at 64000).
-const OUTPUT_CAP: usize = 60000;
-/// Cap for the live output tail riding the 30s progress pings — smaller than
-/// OUTPUT_CAP so the frequent pings stay cheap.
-const LIVE_TAIL_CAP: usize = 16000;
+
 
 // ── Wire types ──────────────────────────────────────────────────────────────
 
@@ -552,18 +543,6 @@ fn finish(
 
 // ── Script jobs ─────────────────────────────────────────────────────────────
 
-/// Outcome of a Script job run. `error` is set when the agent itself failed
-/// to run the script (temp file, spawn); `timed_out` when the script was
-/// killed after SCRIPT_TIMEOUT. `output_tail` always carries the last chunk
-/// of combined stdout/stderr — it is the only console visibility operators
-/// have, so it is sent on success and failure alike.
-struct ScriptOutcome {
-    exit_code: Option<i32>,
-    timed_out: bool,
-    error: Option<String>,
-    output_tail: String,
-}
-
 /// Run a Script job: the script rides in `job.package` — a bash script on
 /// unix, a PowerShell script on Windows (e.g. the server-rendered IIS deploy
 /// and config scripts). Reports Done on exit 0, Failed otherwise; the
@@ -584,11 +563,15 @@ fn execute_script_job(client: &Client, state: &mut State, state_path: &PathBuf, 
     }
 
     let mut pings: u32 = 0;
-    let outcome = run_script(&job.package, SCRIPT_PING_INTERVAL, |live_tail| {
-        pings += 1;
-        // Ramp 20 → 90 over the first pings, then hold.
-        client.progress_with_output(&job.name, (20 + pings * 10).min(90), live_tail);
-    });
+    let outcome = crate::script::run_script(
+        &job.package,
+        crate::script::SCRIPT_PING_INTERVAL,
+        |live_tail| {
+            pings += 1;
+            // Ramp 20 → 90 over the first pings, then hold.
+            client.progress_with_output(&job.name, (20 + pings * 10).min(90), live_tail);
+        },
+    );
 
     let (status, result, error) = if let Some(e) = &outcome.error {
         ("Failed", String::new(), e.clone())
@@ -596,7 +579,10 @@ fn execute_script_job(client: &Client, state: &mut State, state_path: &PathBuf, 
         (
             "Failed",
             String::new(),
-            format!("script timed out after {} minutes", SCRIPT_TIMEOUT.as_secs() / 60),
+            format!(
+                "script timed out after {} minutes",
+                crate::script::SCRIPT_TIMEOUT.as_secs() / 60
+            ),
         )
     } else if outcome.exit_code == Some(0) {
         ("Done", "script completed".to_string(), String::new())
@@ -617,199 +603,6 @@ fn execute_script_job(client: &Client, state: &mut State, state_path: &PathBuf, 
         &error,
         Some(&outcome.output_tail),
     );
-}
-
-/// Bytes written to the script temp file. Windows PowerShell 5.1 reads a
-/// BOM-less .ps1 as ANSI, mangling any non-ASCII; prefix a UTF-8 BOM so both
-/// 5.1 and 7+ decode the file as UTF-8.
-#[cfg(windows)]
-fn script_file_bytes(script: &str) -> Vec<u8> {
-    let mut bytes = b"\xef\xbb\xbf".to_vec();
-    bytes.extend_from_slice(script.as_bytes());
-    bytes
-}
-
-#[cfg(not(windows))]
-fn script_file_bytes(script: &str) -> &[u8] {
-    script.as_bytes()
-}
-
-/// Write `script` to a temp file (0700 on unix) and run it — `bash` on unix,
-/// `powershell.exe -File` on Windows — capturing combined stdout+stderr.
-/// `ping` is called every SCRIPT_PING_INTERVAL while the script runs, with the
-/// live tail of the output captured so far (capped at LIVE_TAIL_CAP; empty
-/// when the log cannot be read). The temp files are always deleted afterwards.
-fn run_script(script: &str, ping_interval: Duration, mut ping: impl FnMut(&str)) -> ScriptOutcome {
-    let fail = |outcome: &mut ScriptOutcome, e: anyhow::Error| {
-        tracing::error!("script job failed to run: {:#}", e);
-        outcome.error = Some(format!("{:#}", e));
-    };
-
-    let mut outcome = ScriptOutcome {
-        exit_code: None,
-        timed_out: false,
-        error: None,
-        output_tail: String::new(),
-    };
-
-    let dir = std::env::temp_dir().join("auditready");
-    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let stamp = format!(
-        "{}-{}-{}",
-        std::process::id(),
-        Utc::now().timestamp_nanos_opt().unwrap_or_default(),
-        COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-    );
-    #[cfg(windows)]
-    let script_path = dir.join(format!("script-{}.ps1", stamp));
-    #[cfg(not(windows))]
-    let script_path = dir.join(format!("script-{}.sh", stamp));
-    let log_path = dir.join(format!("script-{}.log", stamp));
-
-    'run: {
-        if let Err(e) = std::fs::create_dir_all(&dir)
-            .and_then(|_| std::fs::write(&script_path, script_file_bytes(script)))
-            .context("failed to write script temp file")
-        {
-            fail(&mut outcome, e);
-            break 'run;
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Err(e) = std::fs::set_permissions(
-                &script_path,
-                std::fs::Permissions::from_mode(0o700),
-            )
-            .context("failed to chmod script temp file")
-            {
-                fail(&mut outcome, e);
-                break 'run;
-            }
-        }
-
-        let log = match std::fs::File::create(&log_path)
-            .and_then(|f| f.try_clone().map(|f2| (f, f2)))
-            .context("failed to create script log file")
-        {
-            Ok((out, err)) => (out, err),
-            Err(e) => {
-                fail(&mut outcome, e);
-                break 'run;
-            }
-        };
-
-        #[cfg(windows)]
-        let mut cmd = {
-            let mut c = std::process::Command::new("powershell.exe");
-            c.arg("-NoProfile")
-                .arg("-NonInteractive")
-                .arg("-ExecutionPolicy")
-                .arg("Bypass")
-                .arg("-File")
-                .arg(&script_path);
-            c.no_window();
-            c
-        };
-        #[cfg(not(windows))]
-        let mut cmd = {
-            let mut c = std::process::Command::new("bash");
-            c.arg(&script_path);
-            c
-        };
-        cmd.stdin(std::process::Stdio::null())
-            .stdout(log.0)
-            .stderr(log.1)
-            // The unix scripts run apt; never let debconf prompt on a dead stdin.
-            .env("DEBIAN_FRONTEND", "noninteractive");
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            // Own process group, so a timeout kills apt/kubeadm children too.
-            cmd.process_group(0);
-        }
-        let mut child = match cmd.spawn().context("failed to spawn script interpreter") {
-            Ok(c) => c,
-            Err(e) => {
-                fail(&mut outcome, e);
-                break 'run;
-            }
-        };
-
-        let start = std::time::Instant::now();
-        let mut last_ping = std::time::Instant::now();
-        loop {
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    outcome.exit_code = status.code();
-                    break;
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    fail(&mut outcome, anyhow::Error::new(e).context("failed to poll script"));
-                    break;
-                }
-            }
-            if start.elapsed() > SCRIPT_TIMEOUT {
-                tracing::error!("script exceeded {:?}; killing it", SCRIPT_TIMEOUT);
-                kill_script(&mut child);
-                let _ = child.wait();
-                outcome.timed_out = true;
-                break;
-            }
-            if last_ping.elapsed() >= ping_interval {
-                let live_tail = std::fs::read(&log_path)
-                    .map(|bytes| tail_chars(&String::from_utf8_lossy(&bytes), LIVE_TAIL_CAP))
-                    .unwrap_or_default();
-                ping(&live_tail);
-                last_ping = std::time::Instant::now();
-            }
-            std::thread::sleep(Duration::from_secs(1));
-        }
-    }
-
-    if let Ok(bytes) = std::fs::read(&log_path) {
-        outcome.output_tail = tail_chars(&String::from_utf8_lossy(&bytes), OUTPUT_CAP);
-    }
-    if let Err(e) = std::fs::remove_file(&script_path) {
-        tracing::warn!("failed to delete {}: {}", script_path.display(), e);
-    }
-    if let Err(e) = std::fs::remove_file(&log_path) {
-        tracing::warn!("failed to delete {}: {}", log_path.display(), e);
-    }
-    outcome
-}
-
-/// Kill a timed-out script. On unix the script runs in its own process group,
-/// so kill the whole group (bash may have spawned apt, kubeadm, …).
-#[cfg(unix)]
-fn kill_script(child: &mut std::process::Child) {
-    unsafe {
-        libc::kill(-(child.id() as i32), libc::SIGKILL);
-    }
-    let _ = child.kill();
-}
-
-#[cfg(not(unix))]
-fn kill_script(child: &mut std::process::Child) {
-    let _ = child.kill();
-}
-
-/// Keep the last `cap` chars of `text` (char-boundary safe), with a "..."
-/// prefix when truncated.
-fn tail_chars(text: &str, cap: usize) -> String {
-    if text.chars().count() <= cap {
-        return text.to_string();
-    }
-    let tail: String = text
-        .chars()
-        .rev()
-        .take(cap)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
-    format!("...{}", tail)
 }
 
 // ── Platform execution ──────────────────────────────────────────────────────
@@ -1302,6 +1095,7 @@ exit 1
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::script::{run_script, tail_chars, OUTPUT_CAP, SCRIPT_PING_INTERVAL};
 
     #[test]
     fn parses_poll_response() {

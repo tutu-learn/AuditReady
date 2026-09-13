@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="ALL" />
+  </component>
+  <component name="CargoProjects">
+    <cargoProject FILE="$PROJECT_DIR$/Cargo.toml">
+      <package file="$PROJECT_DIR$/crates/agent">
+        <feature name="default" enabled="true" />
+      </package>
+      <package file="$PROJECT_DIR$/crates/protocol">
+        <feature name="default" enabled="true" />
+      </package>
+    </cargoProject>
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="d602f251-8b3a-4e38-81e3-dbc9f37ff262" name="Changes" comment="docs(README): add instructions for enabling client mode on existing Windows installs" />
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="cachedIndexableFilesCount" value="60" />
+    <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
+  </component>
+  <component name="ExecutionTargetManager" SELECTED_TARGET="RsBuildProfile:test" />
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;nefdtie101&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/tutu-learn/AuditReady.git&quot;,
+    &quot;accountId&quot;: &quot;08aba313-b204-4eb6-ae2d-b8068f0822df&quot;
+  }
+}</component>
+  <component name="MacroExpansionManager">
+    <option name="directoryName" value="ofPu8SsE" />
+  </component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="NextEditCompletionFeaturesState">
+    <decayedCancelled>
+      <entry key="MS100" value="1.442632157553772" />
+      <entry key="MS500" value="2.8506384720977396" />
+      <entry key="S2" value="3.642606360392281" />
+      <entry key="S5" value="3.850161552254754" />
+      <entry key="S10" value="3.9238860657535297" />
+      <entry key="S30" value="4.040798389068508" />
+      <entry key="S60" value="4.811362757007158" />
+      <entry key="M2" value="6.983172901592654" />
+      <entry key="M5" value="10.52025728522517" />
+      <entry key="M10" value="12.46737057851738" />
+      <entry key="M15" value="13.238723504568034" />
+      <entry key="M30" value="14.080761122875556" />
+      <entry key="H1" value="14.530300185350573" />
+      <entry key="H2" value="14.762574115125894" />
+      <entry key="H4" value="14.880635941674008" />
+      <entry key="D1" value="14.980014946633544" />
+      <entry key="W1" value="14.997142754726358" />
+    </decayedCancelled>
+    <decayedSelected>
+      <entry key="MS100" value="0.0" />
+      <entry key="MS500" value="0.0" />
+      <entry key="S2" value="0.0" />
+      <entry key="S5" value="0.0" />
+      <entry key="S10" value="0.0" />
+      <entry key="S30" value="0.0" />
+      <entry key="S60" value="0.0" />
+      <entry key="M2" value="0.0" />
+      <entry key="M5" value="0.0" />
+      <entry key="M10" value="0.0" />
+      <entry key="M15" value="0.0" />
+      <entry key="M30" value="0.0" />
+      <entry key="H1" value="0.0" />
+      <entry key="H2" value="0.0" />
+      <entry key="H4" value="0.0" />
+      <entry key="D1" value="0.0" />
+      <entry key="W1" value="0.0" />
+    </decayedSelected>
+    <decayedShown>
+      <entry key="MS100" value="1.3937374879428057" />
+      <entry key="MS500" value="2.8263910787438187" />
+      <entry key="S2" value="3.6345115009270366" />
+      <entry key="S5" value="3.846710771031729" />
+      <entry key="S10" value="3.9221228886276314" />
+      <entry key="S30" value="4.040190038459583" />
+      <entry key="S60" value="4.8109843446945835" />
+      <entry key="M2" value="6.982875698690645" />
+      <entry key="M5" value="10.5200668853452" />
+      <entry key="M10" value="12.46725554294601" />
+      <entry key="M15" value="13.238641561849434" />
+      <entry key="M30" value="14.0807172808749" />
+      <entry key="H1" value="14.530277497320016" />
+      <entry key="H2" value="14.762562572853312" />
+      <entry key="H4" value="14.88063012013952" />
+      <entry key="D1" value="14.980013969306256" />
+      <entry key="W1" value="14.997142614934049" />
+    </decayedShown>
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;customColor&quot;: &quot;&quot;,
+  &quot;associatedIndex&quot;: 7
+}</component>
+  <component name="ProjectId" id="3IohiJQmbcYPwTJJZiH2xZzy8b0" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;CidrDebugProfileConversion&quot;: &quot;true&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.rust.reset.selective.auto.import&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/Users/johannnefdt/RustroverProjects/AuditReady&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;org.rust.cargo.project.model.PROJECT_DISCOVERY&quot;: &quot;true&quot;,
+    &quot;org.rust.first.attach.projects&quot;: &quot;true&quot;
+  }
+}</component>
+  <component name="RunManager" selected="Cargo.Test AuditReady">
+    <configuration name="Run auditready" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+      <option name="command" value="run --package auditready --bin auditready" />
+      <option name="workingDirectory" value="file://$PROJECT_DIR$" />
+      <envs />
+      <option name="emulateTerminal" value="true" />
+      <option name="channel" value="DEFAULT" />
+      <option name="requiredFeatures" value="true" />
+      <option name="allFeatures" value="false" />
+      <option name="withSudo" value="false" />
+      <option name="buildTarget" value="REMOTE" />
+      <option name="backtrace" value="SHORT" />
+      <option name="isRedirectInput" value="false" />
+      <option name="redirectInputPath" value="" />
+      <method v="2">
+        <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="Test AuditReady" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+      <option name="buildProfileId" value="test" />
+      <option name="command" value="test --workspace" />
+      <option name="workingDirectory" value="file://$PROJECT_DIR$" />
+      <envs />
+      <option name="emulateTerminal" value="true" />
+      <option name="channel" value="DEFAULT" />
+      <option name="requiredFeatures" value="true" />
+      <option name="allFeatures" value="false" />
+      <option name="withSudo" value="false" />
+      <option name="buildTarget" value="REMOTE" />
+      <option name="backtrace" value="SHORT" />
+      <option name="isRedirectInput" value="false" />
+      <option name="redirectInputPath" value="" />
+      <method v="2">
+        <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
+      </method>
+    </configuration>
+  </component>
+  <component name="RustProjectSettings">
+    <option name="toolchainHomeDirectory" value="$USER_HOME$/.cargo/bin" />
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="d602f251-8b3a-4e38-81e3-dbc9f37ff262" name="Changes" comment="" />
+      <created>1788436955693</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1788436955693</updated>
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="feat(client): implement SEBRUS::OPS visual theme and dashboard enhancements&#10;&#10;Introduce a custom SEBRUS::OPS theme for the client dashboard, featuring a defined color palette and typography for readability and consistency with the web" />
+    <MESSAGE value="refactor(client): update tray icon to display SEBRUS::OPS &quot;S&quot; in cyan theme&#10;&#10;Replace the previous solid-color circle tray icon with a rasterized 5x7 pixel-font &quot;S&quot; representing SEBRUS::OPS. Aligns visuals with the SEBRUS::OPS theme and removes the need for a separate asset file." />
+    <MESSAGE value="feat(scripts): improve macOS update script robustness and add new automation scripts&#10;&#10;Enhance `update-macos.sh` to handle config rewrite failures gracefully, ensure proper file permissions, and improve client agent restart logic. Add `fix-dns-capture-macos.sh` for DNS monitoring setup and `enable-client-mode-windows.ps1` to configure client mode on Windows." />
+    <MESSAGE value="docs(README): add instructions for enabling client mode on existing Windows installs" />
+    <option name="LAST_COMMIT_MESSAGE" value="docs(README): add instructions for enabling client mode on existing Windows installs" />
+  </component>
+</project>
