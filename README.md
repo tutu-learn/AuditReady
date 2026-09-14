@@ -231,6 +231,15 @@ Install client mode alongside the regular agent:
 
   This only registers and starts the `AuditReady-Client` task; it does not
   touch the binary, configuration, or main task.
+
+  If the client task keeps stopping (tray icon disappears), use the watchdog:
+
+  ```powershell
+  .\watchdog-client-windows.ps1 -RegisterTask
+  ```
+
+  This creates an `AuditReady-Client-Watchdog` task that restarts the client
+  whenever it dies and logs to `%LOCALAPPDATA%\AuditReady\client-watchdog.log`.
 - macOS: `sudo MODE=client ./install-macos.sh` additionally installs the
   `com.auditready.client` LaunchAgent. On macOS, **paste** capture requires
   the Accessibility permission granted to the `auditready` binary (System

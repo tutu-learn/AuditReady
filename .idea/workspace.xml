@@ -14,7 +14,14 @@
     </cargoProject>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d602f251-8b3a-4e38-81e3-dbc9f37ff262" name="Changes" comment="docs(README): add instructions for enabling client mode on existing Windows installs" />
+    <list default="true" id="d602f251-8b3a-4e38-81e3-dbc9f37ff262" name="Changes" comment="fixed iis deployments">
+      <change beforePath="$PROJECT_DIR$/.github/workflows/release.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/release.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/enable-client-mode-windows.ps1" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/enable-client-mode-windows.ps1" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/install-windows.ps1" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/install-windows.ps1" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/update-windows.ps1" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/update-windows.ps1" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -37,7 +44,7 @@
   <component name="GithubPullRequestsUISettings">{
   &quot;selectedUrlAndAccountId&quot;: {
     &quot;url&quot;: &quot;https://github.com/tutu-learn/AuditReady.git&quot;,
-    &quot;accountId&quot;: &quot;08aba313-b204-4eb6-ae2d-b8068f0822df&quot;
+    &quot;accountId&quot;: &quot;3e6ef94f-e4a0-4876-a463-3202a5640077&quot;
   }
 }</component>
   <component name="MacroExpansionManager">
@@ -194,6 +201,7 @@
     <MESSAGE value="refactor(client): update tray icon to display SEBRUS::OPS &quot;S&quot; in cyan theme&#10;&#10;Replace the previous solid-color circle tray icon with a rasterized 5x7 pixel-font &quot;S&quot; representing SEBRUS::OPS. Aligns visuals with the SEBRUS::OPS theme and removes the need for a separate asset file." />
     <MESSAGE value="feat(scripts): improve macOS update script robustness and add new automation scripts&#10;&#10;Enhance `update-macos.sh` to handle config rewrite failures gracefully, ensure proper file permissions, and improve client agent restart logic. Add `fix-dns-capture-macos.sh` for DNS monitoring setup and `enable-client-mode-windows.ps1` to configure client mode on Windows." />
     <MESSAGE value="docs(README): add instructions for enabling client mode on existing Windows installs" />
-    <option name="LAST_COMMIT_MESSAGE" value="docs(README): add instructions for enabling client mode on existing Windows installs" />
+    <MESSAGE value="fixed iis deployments" />
+    <option name="LAST_COMMIT_MESSAGE" value="fixed iis deployments" />
   </component>
 </project>

@@ -58,6 +58,8 @@ $clientSettings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
     -MultipleInstances IgnoreNew `
+    -RestartCount 3 `
+    -RestartInterval (New-TimeSpan -Minutes 1) `
     -ExecutionTimeLimit ([TimeSpan]::Zero)
 
 Register-ScheduledTask -TaskName $ClientTaskName `
@@ -71,3 +73,5 @@ Write-Host ""
 Write-Host "Client mode enabled: $ClientTaskName registered (starts at each user logon)."
 Write-Host "A tray icon should appear in the notification area within a few seconds;"
 Write-Host "click it to open the stats dashboard."
+Write-Host "If the tray icon keeps disappearing, run:"
+Write-Host "  & `"$InstallDir\watchdog-client-windows.ps1`" -RegisterTask"

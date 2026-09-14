@@ -82,6 +82,26 @@ try {
         }
     }
 
+    # Repair older client tasks that were created without automatic restart settings.
+    $clientTaskName = "AuditReady-Client"
+    $clientTask = Get-ScheduledTask -TaskName $clientTaskName -ErrorAction SilentlyContinue
+    if ($clientTask) {
+        $repaired = $false
+        if ($clientTask.Settings.ExecutionTimeLimit -ne "PT0S") {
+            $clientTask.Settings.ExecutionTimeLimit = "PT0S"
+            $repaired = $true
+        }
+        if ($clientTask.Settings.RestartCount -lt 3) {
+            $clientTask.Settings.RestartCount = 3
+            $clientTask.Settings.RestartInterval = "PT1M"
+            $repaired = $true
+        }
+        if ($repaired) {
+            Set-ScheduledTask -TaskName $clientTaskName -Settings $clientTask.Settings | Out-Null
+            Write-Host "Repaired client task settings (unlimited runtime + auto-restart on failure)."
+        }
+    }
+
     # Stopping the task is asynchronous and best-effort: kill any lingering
     # agent processes, then wait for the file lock on the executable to be
     # released before overwriting it.
@@ -108,7 +128,13 @@ try {
     Write-Host "Updated $BinaryPath"
 
     # Update helper scripts if present in the release archive.
-    $scripts = @("restart-windows.ps1", "update-token-windows.ps1", "update-windows.ps1")
+    $scripts = @(
+        "restart-windows.ps1",
+        "update-token-windows.ps1",
+        "update-windows.ps1",
+        "enable-client-mode-windows.ps1",
+        "watchdog-client-windows.ps1"
+    )
     foreach ($script in $scripts) {
         $source = Join-Path $ExtractedDir $script
         if (Test-Path $source) {

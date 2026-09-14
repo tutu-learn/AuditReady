@@ -120,6 +120,12 @@ try {
             -Destination (Join-Path $InstallDir "update-token-windows.ps1") -Force
         Write-Host "Installed update-token-windows.ps1 to $InstallDir"
     }
+    $WatchdogScript = Join-Path $ExtractedDir "watchdog-client-windows.ps1"
+    if (Test-Path $WatchdogScript) {
+        Copy-Item -Path $WatchdogScript `
+            -Destination (Join-Path $InstallDir "watchdog-client-windows.ps1") -Force
+        Write-Host "Installed watchdog-client-windows.ps1 to $InstallDir"
+    }
 
     # Prepare config directory.
     New-Item -ItemType Directory -Path $ConfigDir -Force | Out-Null
@@ -202,6 +208,8 @@ try {
             -AllowStartIfOnBatteries `
             -DontStopIfGoingOnBatteries `
             -MultipleInstances IgnoreNew `
+            -RestartCount 3 `
+            -RestartInterval (New-TimeSpan -Minutes 1) `
             -ExecutionTimeLimit ([TimeSpan]::Zero)
 
         Register-ScheduledTask -TaskName $ClientTaskName `
@@ -217,6 +225,9 @@ try {
     Write-Host "  Status:       Get-ScheduledTaskInfo $ServiceName"
     Write-Host "  Restart:      & `"$InstallDir\restart-windows.ps1`""
     Write-Host "  Update token: & `"$InstallDir\update-token-windows.ps1`" <token>"
+    if ($ClientMode) {
+        Write-Host "  Keep client alive: & `"$InstallDir\watchdog-client-windows.ps1`" -RegisterTask"
+    }
 } finally {
     Remove-Item -Path $TmpDir -Recurse -Force -ErrorAction SilentlyContinue
 }
