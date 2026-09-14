@@ -91,6 +91,7 @@ jobs:
             cp scripts/restart-windows.ps1 dist/auditready/
             cp scripts/update-token-windows.ps1 dist/auditready/
             cp scripts/update-windows.ps1 dist/auditready/
+            cp scripts/update-client-windows.ps1 dist/auditready/
             cp scripts/enable-client-mode-windows.ps1 dist/auditready/
             cp scripts/watchdog-client-windows.ps1 dist/auditready/
           else

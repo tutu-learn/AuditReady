@@ -120,6 +120,12 @@ try {
             -Destination (Join-Path $InstallDir "update-token-windows.ps1") -Force
         Write-Host "Installed update-token-windows.ps1 to $InstallDir"
     }
+    $UpdateClientScript = Join-Path $ExtractedDir "update-client-windows.ps1"
+    if (Test-Path $UpdateClientScript) {
+        Copy-Item -Path $UpdateClientScript `
+            -Destination (Join-Path $InstallDir "update-client-windows.ps1") -Force
+        Write-Host "Installed update-client-windows.ps1 to $InstallDir"
+    }
     $WatchdogScript = Join-Path $ExtractedDir "watchdog-client-windows.ps1"
     if (Test-Path $WatchdogScript) {
         Copy-Item -Path $WatchdogScript `

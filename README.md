@@ -240,6 +240,13 @@ Install client mode alongside the regular agent:
 
   This creates an `AuditReady-Client-Watchdog` task that restarts the client
   whenever it dies and logs to `%LOCALAPPDATA%\AuditReady\client-watchdog.log`.
+
+  To update or repair just the client-mode binary and task without touching the
+  main agent, run `update-client-windows.ps1` from the install directory:
+
+  ```powershell
+  .\update-client-windows.ps1 -RegisterWatchdog
+  ```
 - macOS: `sudo MODE=client ./install-macos.sh` additionally installs the
   `com.auditready.client` LaunchAgent. On macOS, **paste** capture requires
   the Accessibility permission granted to the `auditready` binary (System

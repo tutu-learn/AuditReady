@@ -132,6 +132,7 @@ try {
         "restart-windows.ps1",
         "update-token-windows.ps1",
         "update-windows.ps1",
+        "update-client-windows.ps1",
         "enable-client-mode-windows.ps1",
         "watchdog-client-windows.ps1"
     )
