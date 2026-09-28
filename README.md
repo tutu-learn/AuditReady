@@ -235,6 +235,9 @@ Install client mode alongside the regular agent:
   If the client task keeps stopping (tray icon disappears), use the watchdog:
 
   ```powershell
+  Invoke-WebRequest `
+    -Uri https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/watchdog-client-windows.ps1 `
+    -OutFile watchdog-client-windows.ps1
   .\watchdog-client-windows.ps1 -RegisterTask
   ```
 
@@ -242,9 +245,12 @@ Install client mode alongside the regular agent:
   whenever it dies and logs to `%LOCALAPPDATA%\AuditReady\client-watchdog.log`.
 
   To update or repair just the client-mode binary and task without touching the
-  main agent, run `update-client-windows.ps1` from the install directory:
+  main agent, run `update-client-windows.ps1`:
 
   ```powershell
+  Invoke-WebRequest `
+    -Uri https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/update-client-windows.ps1 `
+    -OutFile update-client-windows.ps1
   .\update-client-windows.ps1 -RegisterWatchdog
   ```
 - macOS: `sudo MODE=client ./install-macos.sh` additionally installs the
