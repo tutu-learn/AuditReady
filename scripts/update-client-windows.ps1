@@ -42,6 +42,23 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# If launched by the running AuditReady agent, re-run detached so the update
+# survives the scheduled task/process being stopped while the binary is replaced.
+$parentPid = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId
+$parentName = (Get-Process -Id $parentPid -ErrorAction SilentlyContinue).ProcessName
+if (-not $env:AUDITREADY_UPDATE_DETACHED -and ($parentName -eq "auditready" -or -not [Environment]::UserInteractive)) {
+    $env:AUDITREADY_UPDATE_DETACHED = "1"
+    $logFile = Join-Path $env:ProgramData "AuditReady\update-client.log"
+    New-Item -ItemType Directory -Path (Split-Path $logFile) -Force | Out-Null
+    Start-Process -FilePath "powershell.exe" `
+        -ArgumentList "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"" `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $logFile `
+        -RedirectStandardError $logFile
+    Write-Host "AuditReady client update detached; log: $logFile"
+    exit 0
+}
+
 $Repo = "tutu-learn/AuditReady"
 $Target = "x86_64-pc-windows-msvc"
 

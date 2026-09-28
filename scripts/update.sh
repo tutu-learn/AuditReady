@@ -24,6 +24,18 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# If launched by the running AuditReady agent (non-TTY), re-run detached so the
+# update survives the systemd unit being stopped while the binary is replaced.
+if [ -z "${AUDITREADY_UPDATE_DETACHED:-}" ] && [ ! -t 1 ]; then
+    export AUDITREADY_UPDATE_DETACHED=1
+    LOG_FILE="/var/log/auditready-update.log"
+    touch "$LOG_FILE" 2>/dev/null || LOG_FILE="/tmp/auditready-update.log"
+    setsid bash "$0" "$@" >>"$LOG_FILE" 2>&1 &
+    disown
+    echo "AuditReady update detached; log: $LOG_FILE" >&2
+    exit 0
+fi
+
 if [ ! -f "${INSTALL_DIR}/auditready" ]; then
     echo "No existing installation at ${INSTALL_DIR}/auditready." >&2
     echo "Use install.sh for a fresh install." >&2
