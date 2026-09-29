@@ -123,6 +123,15 @@ variables:
 sudo DOMAIN=api.example.com TOKEN=abc123 ./install-macos.sh
 ```
 
+Install client mode alongside the regular agent (per-user clipboard/mouse/file
+monitoring + tray dashboard):
+
+```bash
+wget -q https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/install-macos.sh
+chmod +x install-macos.sh
+sudo MODE=client ./install-macos.sh
+```
+
 Verify the service after installation:
 
 ```bash
@@ -361,6 +370,35 @@ wget -q https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/upd
 chmod +x update-macos.sh
 sudo ./update-macos.sh            # or: sudo VERSION=<tag> ./update-macos.sh
 ```
+
+### Client mode (per-user LaunchAgent)
+
+When client mode is installed, the per-user agent runs separately from the
+root LaunchDaemon. Replace `$(stat -f '%Su' /dev/console)` with the actual
+username if you are running these remotely (they must target the user's GUI
+session, not `root`).
+
+```bash
+CONSOLE_USER=$(stat -f '%Su' /dev/console)
+CONSOLE_UID=$(id -u "$CONSOLE_USER")
+
+# Restart the client agent (picks up a new binary after update)
+sudo launchctl kickstart -k "gui/${CONSOLE_UID}/com.auditready.client"
+
+# View client logs
+tail -f /etc/auditready/auditready-client.log
+
+# Stop the client agent until next login
+sudo launchctl bootout "gui/${CONSOLE_UID}" /Library/LaunchAgents/com.auditready.client.plist
+
+# Update only the client agent (keeps config, restarts the per-user LaunchAgent)
+wget -q https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/update-client-macos.sh
+chmod +x update-client-macos.sh
+sudo ./update-client-macos.sh
+```
+
+`sudo auditready-update` already restarts the client agent for the currently
+logged-in user when it is installed.
 
 ## Uninstall (Linux)
 
