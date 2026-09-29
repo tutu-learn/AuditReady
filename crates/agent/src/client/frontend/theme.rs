@@ -1,6 +1,6 @@
 //! SEBRUS::OPS ops-console theme (matches the web dashboard).
 
-use iced::widget::container;
+use iced::widget::{button, container};
 use iced::{theme::Palette, Background, Border, Color, Font, Theme};
 
 pub const BG: Color = Color::from_rgb8(0x03, 0x06, 0x0c);
@@ -57,5 +57,30 @@ pub fn chip_style(color: Color) -> impl Fn(&Theme) -> container::Style {
             radius: 3.0.into(),
         },
         ..container::Style::default()
+    }
+}
+
+pub fn button_style(_theme: &Theme, status: button::Status) -> button::Style {
+    let base = button::Style {
+        background: Some(Background::Color(PANEL)),
+        border: Border {
+            color: CYAN,
+            width: 1.0,
+            radius: 3.0.into(),
+        },
+        text_color: TEXT,
+        ..button::Style::default()
+    };
+    match status {
+        button::Status::Hovered => button::Style {
+            background: Some(Background::Color(BORDER)),
+            ..base
+        },
+        button::Status::Pressed => button::Style {
+            background: Some(Background::Color(CYAN)),
+            text_color: BG,
+            ..base
+        },
+        _ => base,
     }
 }

@@ -5,6 +5,9 @@
   </component>
   <component name="CargoProjects">
     <cargoProject FILE="$PROJECT_DIR$/Cargo.toml">
+      <package file="$PROJECT_DIR$/crates/action_client">
+        <feature name="default" enabled="true" />
+      </package>
       <package file="$PROJECT_DIR$/crates/agent">
         <feature name="default" enabled="true" />
       </package>
@@ -14,13 +17,16 @@
     </cargoProject>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d602f251-8b3a-4e38-81e3-dbc9f37ff262" name="Changes" comment="fixed iis deployments">
-      <change beforePath="$PROJECT_DIR$/.github/workflows/release.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/release.yml" afterDir="false" />
+    <list default="true" id="d602f251-8b3a-4e38-81e3-dbc9f37ff262" name="Changes" comment="feat(scripts): enable detached updates for AuditReady agents across platforms&#10;&#10;Ensure update scripts for macOS, Windows, and Linux re-launch in detached mode when initiated by a running AuditReady agent. This prevents update interruptions caused by the update process stopping the agent mid-update. Logs are redirected to dedicated update log files for each platform.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/scripts/enable-client-mode-windows.ps1" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/enable-client-mode-windows.ps1" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/scripts/install-windows.ps1" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/install-windows.ps1" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/scripts/update-windows.ps1" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/update-windows.ps1" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/crates/agent/src/client/frontend/dashboard.rs" beforeDir="false" afterPath="$PROJECT_DIR$/crates/agent/src/client/frontend/dashboard.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/crates/agent/src/client/frontend/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/crates/agent/src/client/frontend/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/crates/agent/src/client/frontend/theme.rs" beforeDir="false" afterPath="$PROJECT_DIR$/crates/agent/src/client/frontend/theme.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/crates/agent/src/client/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/crates/agent/src/client/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/crates/agent/src/client/ui.rs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/crates/agent/src/config.rs" beforeDir="false" afterPath="$PROJECT_DIR$/crates/agent/src/config.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/crates/agent/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/crates/agent/src/main.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -28,7 +34,7 @@
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="60" />
+    <option name="cachedIndexableFilesCount" value="76" />
     <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="ExecutionTargetManager" SELECTED_TARGET="RsBuildProfile:test" />
@@ -44,7 +50,7 @@
   <component name="GithubPullRequestsUISettings">{
   &quot;selectedUrlAndAccountId&quot;: {
     &quot;url&quot;: &quot;https://github.com/tutu-learn/AuditReady.git&quot;,
-    &quot;accountId&quot;: &quot;3e6ef94f-e4a0-4876-a463-3202a5640077&quot;
+    &quot;accountId&quot;: &quot;e5c6b783-876f-427e-8950-125234752873&quot;
   }
 }</component>
   <component name="MacroExpansionManager">
@@ -56,23 +62,23 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.442632157553772" />
-      <entry key="MS500" value="2.8506384720977396" />
-      <entry key="S2" value="3.642606360392281" />
-      <entry key="S5" value="3.850161552254754" />
-      <entry key="S10" value="3.9238860657535297" />
-      <entry key="S30" value="4.040798389068508" />
-      <entry key="S60" value="4.811362757007158" />
-      <entry key="M2" value="6.983172901592654" />
-      <entry key="M5" value="10.52025728522517" />
-      <entry key="M10" value="12.46737057851738" />
-      <entry key="M15" value="13.238723504568034" />
-      <entry key="M30" value="14.080761122875556" />
-      <entry key="H1" value="14.530300185350573" />
-      <entry key="H2" value="14.762574115125894" />
-      <entry key="H4" value="14.880635941674008" />
-      <entry key="D1" value="14.980014946633544" />
-      <entry key="W1" value="14.997142754726358" />
+      <entry key="MS100" value="1.403283009963874" />
+      <entry key="MS500" value="4.150467737922572" />
+      <entry key="S2" value="6.6448525661968425" />
+      <entry key="S5" value="7.414298051164168" />
+      <entry key="S10" value="7.699278925141266" />
+      <entry key="S30" value="7.963538465034627" />
+      <entry key="S60" value="8.767657771230706" />
+      <entry key="M2" value="10.954286322261392" />
+      <entry key="M5" value="14.50412662899954" />
+      <entry key="M10" value="16.458045739879537" />
+      <entry key="M15" value="17.232174285874144" />
+      <entry key="M30" value="18.077304933948078" />
+      <entry key="H1" value="18.528523619187883" />
+      <entry key="H2" value="18.761673309302573" />
+      <entry key="H4" value="18.88018235615789" />
+      <entry key="D1" value="18.97993890254988" />
+      <entry key="W1" value="18.9971318802925" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="0.0" />
@@ -94,23 +100,23 @@
       <entry key="W1" value="0.0" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="1.3937374879428057" />
-      <entry key="MS500" value="2.8263910787438187" />
-      <entry key="S2" value="3.6345115009270366" />
-      <entry key="S5" value="3.846710771031729" />
-      <entry key="S10" value="3.9221228886276314" />
-      <entry key="S30" value="4.040190038459583" />
-      <entry key="S60" value="4.8109843446945835" />
-      <entry key="M2" value="6.982875698690645" />
-      <entry key="M5" value="10.5200668853452" />
-      <entry key="M10" value="12.46725554294601" />
-      <entry key="M15" value="13.238641561849434" />
-      <entry key="M30" value="14.0807172808749" />
-      <entry key="H1" value="14.530277497320016" />
-      <entry key="H2" value="14.762562572853312" />
-      <entry key="H4" value="14.88063012013952" />
-      <entry key="D1" value="14.980013969306256" />
-      <entry key="W1" value="14.997142614934049" />
+      <entry key="MS100" value="1.3564148244997187" />
+      <entry key="MS500" value="4.104457841756765" />
+      <entry key="S2" value="6.625234818695861" />
+      <entry key="S5" value="7.405472027510832" />
+      <entry key="S10" value="7.694685736991454" />
+      <entry key="S30" value="7.961953793674258" />
+      <entry key="S60" value="8.766787391753224" />
+      <entry key="M2" value="10.953742288657857" />
+      <entry key="M5" value="14.50383721808921" />
+      <entry key="M10" value="16.457881126608438" />
+      <entry key="M15" value="17.232059271876974" />
+      <entry key="M30" value="18.077244545488856" />
+      <entry key="H1" value="18.528492654996395" />
+      <entry key="H2" value="18.761657628185954" />
+      <entry key="H4" value="18.8801744650065" />
+      <entry key="D1" value="18.97993758025903" />
+      <entry key="W1" value="18.997131691219003" />
     </decayedShown>
   </component>
   <component name="ProjectColorInfo">{
@@ -122,27 +128,28 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;CidrDebugProfileConversion&quot;: &quot;true&quot;,
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.rust.reset.selective.auto.import&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
-    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/Users/johannnefdt/RustroverProjects/AuditReady&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;org.rust.cargo.project.model.PROJECT_DISCOVERY&quot;: &quot;true&quot;,
-    &quot;org.rust.first.attach.projects&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "CidrDebugProfileConversion": "true",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.rust.reset.selective.auto.import": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "git-widget-placeholder": "main",
+    "last_opened_file_path": "/Users/johannnefdt/RustroverProjects/AuditReady",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
+    "org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon": "",
+    "org.rust.first.attach.projects": "true"
   }
-}</component>
+}]]></component>
   <component name="RunManager" selected="Cargo.Test AuditReady">
     <configuration name="Run auditready" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
       <option name="command" value="run --package auditready --bin auditready" />
@@ -202,6 +209,10 @@
     <MESSAGE value="feat(scripts): improve macOS update script robustness and add new automation scripts&#10;&#10;Enhance `update-macos.sh` to handle config rewrite failures gracefully, ensure proper file permissions, and improve client agent restart logic. Add `fix-dns-capture-macos.sh` for DNS monitoring setup and `enable-client-mode-windows.ps1` to configure client mode on Windows." />
     <MESSAGE value="docs(README): add instructions for enabling client mode on existing Windows installs" />
     <MESSAGE value="fixed iis deployments" />
-    <option name="LAST_COMMIT_MESSAGE" value="fixed iis deployments" />
+    <MESSAGE value="fixed wachdog" />
+    <MESSAGE value="docs(README): update Windows client instructions with script download examples" />
+    <MESSAGE value="feat(scripts): enable detached update mode for AuditReady agent scripts&#10;&#10;Add logic to `update-macos.sh`, `update-client-windows.ps1`, `update-windows.ps1`, and `update.sh` to allow detached re-execution during updates. Ensures updates persist even if the parent process or service is terminated. Logs update processes to appropriate locations for troubleshooting." />
+    <MESSAGE value="feat(scripts): enable detached updates for AuditReady agents across platforms&#10;&#10;Ensure update scripts for macOS, Windows, and Linux re-launch in detached mode when initiated by a running AuditReady agent. This prevents update interruptions caused by the update process stopping the agent mid-update. Logs are redirected to dedicated update log files for each platform." />
+    <option name="LAST_COMMIT_MESSAGE" value="feat(scripts): enable detached updates for AuditReady agents across platforms&#10;&#10;Ensure update scripts for macOS, Windows, and Linux re-launch in detached mode when initiated by a running AuditReady agent. This prevents update interruptions caused by the update process stopping the agent mid-update. Logs are redirected to dedicated update log files for each platform." />
   </component>
 </project>

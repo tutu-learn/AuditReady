@@ -133,6 +133,11 @@ fn main() -> Result<()> {
         detach_owned_console();
     }
 
+    // Capture domain/token for the frontend UI before settings is moved into
+    // async_setup.
+    let frontend_domain = settings.server.domain.clone();
+    let frontend_token = settings.server.token.clone();
+
     // Everything from here on needs an async runtime to spawn tasks, but the
     // tray icon (below) must run on the real OS main thread with no Tokio
     // runtime entered on it — iced's own (tokio-backed) executor panics with
@@ -141,14 +146,19 @@ fn main() -> Result<()> {
     // drop back to this bare thread for the UI. `rt` is kept alive across
     // that so the already-spawned background tasks keep running.
     let rt = tokio::runtime::Runtime::new()?;
-    let client_stats = rt.block_on(async_setup(settings, mode))?;
+    let client_bundle = rt.block_on(async_setup(settings, mode))?;
 
     // Client mode: run the tray icon + stats dashboard on this thread (the
     // real process main thread, required by the tray icon on macOS). This
     // blocks until the user quits from the tray menu.
-    if let Some(client_stats) = client_stats {
-        if let Err(e) = client::ui::run(client_stats) {
-            tracing::error!("client tray/dashboard UI failed: {}", e);
+    if let Some((client_stats, client_actions)) = client_bundle {
+        if let Err(e) = client::frontend::run(
+            client_stats,
+            client_actions,
+            frontend_domain.unwrap_or_default(),
+            frontend_token.unwrap_or_default(),
+        ) {
+            tracing::error!("client frontend UI failed: {}", e);
         }
     }
 
@@ -157,12 +167,12 @@ fn main() -> Result<()> {
 
 /// Resolves config, spawns every background task (telemetry, patch jobs,
 /// tunnel, client-mode monitors, network refresh), and returns the client
-/// stats handle for the tray UI — or blocks forever for agent mode, which
-/// has no UI of its own. Must run inside a Tokio runtime.
+/// stats + actions handles for the tray UI — or blocks forever for agent
+/// mode, which has no UI of its own. Must run inside a Tokio runtime.
 async fn async_setup(
     settings: config::AppSettings,
     mode: String,
-) -> Result<Option<client::stats::SharedStats>> {
+) -> Result<Option<(client::stats::SharedStats, client::actions::SharedActions)>> {
     // Shared backend config is required for either push or tunnel.
     let domain = settings
         .server
@@ -191,11 +201,11 @@ async fn async_setup(
         std::thread::spawn(move || iis::run_refresher(cache));
     }
 
-    // Client mode gets a shared stats handle feeding the tray/dashboard UI
-    // and connection-lost/restored desktop notifications; agent mode has no
+    // Client mode gets shared stats and actions handles feeding the frontend
+    // UI and connection-lost/restored desktop notifications; agent mode has no
     // UI to feed, so it stays None.
-    let client_stats = if mode == "client" {
-        Some(client::stats::new_shared())
+    let client_bundle = if mode == "client" {
+        Some((client::stats::new_shared(), client::actions::new_shared()))
     } else {
         None
     };
@@ -207,7 +217,7 @@ async fn async_setup(
     let push_token = token.clone();
     let push_cache = pending_cache.clone();
     let push_iis = iis_cache.clone();
-    let push_stats = client_stats.clone();
+    let push_stats = client_bundle.as_ref().map(|(s, _)| s.clone());
     tokio::task::spawn_blocking(move || {
         if let Err(e) = publisher::run(&push_domain, push_interval, Some(&push_token), push_cache, push_iis, push_stats) {
             tracing::error!("telemetry publisher failed: {}", e);
@@ -256,11 +266,31 @@ async fn async_setup(
         let client_settings = settings.client.clone();
         let client_domain = domain.clone();
         let client_token = token.clone();
-        let client_stats = client_stats.clone().expect("client_stats set for client mode");
+        let client_stats = client_bundle
+            .as_ref()
+            .map(|(s, _)| s.clone())
+            .expect("client_stats set for client mode");
         tokio::task::spawn_blocking(move || {
             if let Err(e) = client::run(&client_settings, &client_domain, &client_token, client_stats) {
                 tracing::error!("client mode failed: {}", e);
             }
+        });
+
+        // Action poller: fetches interactive actions from the server and feeds
+        // them into the UI. Uses the same token as the client report path.
+        let action_domain = domain.clone();
+        let action_token = token.clone();
+        let action_stats = client_bundle
+            .as_ref()
+            .map(|(s, _)| s.clone())
+            .expect("client_stats set for client mode");
+        let action_queue = client_bundle
+            .as_ref()
+            .map(|(_, a)| a.clone())
+            .expect("client_actions set for client mode");
+        let poll_interval = settings.client.action_poll_interval_seconds.max(5);
+        tokio::task::spawn_blocking(move || {
+            client::actions::run(&action_domain, &action_token, action_queue, action_stats, poll_interval);
         });
     }
 
@@ -273,11 +303,11 @@ async fn async_setup(
         }
     });
 
-    // Client mode: the tray icon + stats dashboard is run by the caller, on
-    // the real process main thread (required on macOS). Hand back the stats
-    // handle instead of driving it here.
+    // Client mode: the frontend UI is run by the caller, on the real process
+    // main thread (required on macOS). Hand back the stats handle instead of
+    // driving it here.
     if mode == "client" {
-        return Ok(client_stats);
+        return Ok(client_bundle);
     }
 
     // Agent mode: no UI, just keep the process (and this runtime) alive.

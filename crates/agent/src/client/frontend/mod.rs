@@ -20,7 +20,10 @@
 pub use dashboard::run;
 
 #[cfg(not(any(target_os = "macos", windows)))]
-pub fn run(_stats: super::stats::SharedStats) -> anyhow::Result<()> {
+pub fn run(
+    _stats: super::stats::SharedStats,
+    _actions: super::actions::SharedActions,
+) -> anyhow::Result<()> {
     tracing::warn!(
         "client tray/dashboard UI is not supported on this platform (Windows or macOS only); running headless"
     );

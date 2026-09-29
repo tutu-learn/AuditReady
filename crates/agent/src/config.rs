@@ -85,6 +85,9 @@ pub struct ClientSettings {
     /// changed-file scan.
     #[serde(default = "default_excluded_dirs")]
     pub excluded_dirs: Vec<String>,
+    /// Seconds between action polls. Default 30; minimum enforced at runtime.
+    #[serde(default = "default_action_poll_interval")]
+    pub action_poll_interval_seconds: u64,
 }
 
 impl Default for ClientSettings {
@@ -95,12 +98,17 @@ impl Default for ClientSettings {
             clipboard_content_max_bytes: default_clipboard_max(),
             scan_root: None,
             excluded_dirs: default_excluded_dirs(),
+            action_poll_interval_seconds: default_action_poll_interval(),
         }
     }
 }
 
 fn default_client_report_interval() -> u64 {
     300
+}
+
+fn default_action_poll_interval() -> u64 {
+    30
 }
 
 fn default_clipboard_threshold() -> u64 {
@@ -199,6 +207,11 @@ impl AppSettings {
         if let Ok(v) = std::env::var("AUDITREADY_CLIENT_CLIPBOARD_THRESHOLD_BYTES") {
             if let Ok(n) = v.parse() {
                 self.client.clipboard_content_threshold_bytes = n;
+            }
+        }
+        if let Ok(v) = std::env::var("AUDITREADY_CLIENT_ACTION_POLL_INTERVAL_SECONDS") {
+            if let Ok(n) = v.parse() {
+                self.client.action_poll_interval_seconds = n;
             }
         }
     }
