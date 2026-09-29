@@ -276,10 +276,8 @@ async fn async_setup(
             }
         });
 
-        // Action poller: fetches interactive actions from the server and feeds
-        // them into the UI. Uses the same token as the client report path.
-        let action_domain = domain.clone();
-        let action_token = token.clone();
+        // Action push channel: receives interactive actions from the server
+        // over a WebSocket and reports results back over the same connection.
         let action_stats = client_bundle
             .as_ref()
             .map(|(s, _)| s.clone())
@@ -288,9 +286,35 @@ async fn async_setup(
             .as_ref()
             .map(|(_, a)| a.clone())
             .expect("client_actions set for client mode");
+        let actions_url = settings
+            .actions_url()
+            .ok_or_else(|| anyhow::anyhow!("server.domain is not configured"))?;
+        let (result_tx, result_rx) =
+            tokio::sync::mpsc::unbounded_channel::<client::actions::protocol::ActionMessage>();
+        {
+            let mut actions = action_queue.lock().unwrap();
+            actions.result_tx = Some(result_tx);
+        }
+        tokio::spawn(client::actions::ws::run(
+            actions_url,
+            token.clone(),
+            action_queue.clone(),
+            result_rx,
+        ));
+
+        // HTTP fallback: poll occasionally for actions and report results when
+        // the websocket result channel is unavailable.
+        let action_domain = domain.clone();
+        let action_token = token.clone();
         let poll_interval = settings.client.action_poll_interval_seconds.max(5);
         tokio::task::spawn_blocking(move || {
-            client::actions::run(&action_domain, &action_token, action_queue, action_stats, poll_interval);
+            client::actions::run(
+                &action_domain,
+                &action_token,
+                action_queue,
+                action_stats,
+                poll_interval.saturating_mul(6),
+            );
         });
     }
 

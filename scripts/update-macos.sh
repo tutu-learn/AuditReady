@@ -100,6 +100,10 @@ if [ -f "$TMP_DIR/auditready/update-macos.sh" ]; then
     install -m 755 "$TMP_DIR/auditready/update-macos.sh" "$INSTALL_DIR/auditready-update"
     echo "Updated ${INSTALL_DIR}/auditready-update"
 fi
+if [ -f "$TMP_DIR/auditready/update-client-macos.sh" ]; then
+    install -m 755 "$TMP_DIR/auditready/update-client-macos.sh" "$INSTALL_DIR/auditready-update-client"
+    echo "Updated ${INSTALL_DIR}/auditready-update-client"
+fi
 
 # Enforce a 5-minute client reporting interval. Updating the binary alone
 # never touches the config, so an install with a slower interval would keep

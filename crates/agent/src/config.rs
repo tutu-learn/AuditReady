@@ -149,6 +149,15 @@ impl AppSettings {
         self.server.domain.as_deref().map(build_deployments_url)
     }
 
+    /// Return the WebSocket URL for the action push channel.
+    ///
+    /// Derived from `server.domain`:
+    ///   - `localhost:8000` → `ws://localhost:8000/audit_ready/actions/ws`
+    ///   - `api.example.com` → `wss://api.example.com/audit_ready/actions/ws`
+    pub fn actions_url(&self) -> Option<String> {
+        self.server.domain.as_deref().map(build_actions_url)
+    }
+
     /// Override settings from environment variables.
     ///
     /// Supported variables (all optional):
@@ -223,6 +232,10 @@ fn build_broker_url(domain: &str) -> String {
 
 fn build_deployments_url(domain: &str) -> String {
     build_ws_url(domain, "/audit_ready/deployments/ws")
+}
+
+fn build_actions_url(domain: &str) -> String {
+    build_ws_url(domain, "/audit_ready/actions/ws")
 }
 
 fn build_ws_url(domain: &str, path: &str) -> String {

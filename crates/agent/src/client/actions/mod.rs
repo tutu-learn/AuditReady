@@ -1,14 +1,17 @@
-//! Action polling and execution for client mode.
+//! Action polling, WebSocket push, and execution for client mode.
 //!
-//! A background task polls `POST /audit_ready/actions/poll` and pushes incoming
-//! `Audit Ready Action` items into the shared stats state. The iced dashboard
-//! renders them and reports the result back when the user clicks a button.
+//! The primary path is a WebSocket connection to
+//! `/audit_ready/actions/ws` that pushes actions and receives results.
+//! The older HTTP poll/result endpoints remain as a fallback.
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+pub mod protocol;
+pub mod ws;
 
 use super::stats::SharedStats;
 
@@ -54,11 +57,66 @@ impl PendingAction {
     }
 }
 
-/// Shared action queue used by the poller and the UI.
-pub type SharedActions = Arc<Mutex<Vec<PendingAction>>>;
+/// A completed or failed action recorded for the history tab.
+#[derive(Debug, Clone)]
+pub struct HistoryAction {
+    pub item: ActionItem,
+    pub status: String,
+    pub result: Value,
+    pub error_message: String,
+    pub completed_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Shared action state used by the poller, WebSocket client, and UI.
+#[derive(Clone)]
+pub struct ActionState {
+    pub pending: Vec<PendingAction>,
+    pub history: Vec<HistoryAction>,
+    pub result_tx: Option<tokio::sync::mpsc::UnboundedSender<protocol::ActionMessage>>,
+}
+
+/// Shared action queue/state used by the poller/WebSocket client and the UI.
+pub type SharedActions = Arc<Mutex<ActionState>>;
 
 pub fn new_shared() -> SharedActions {
-    Arc::new(Mutex::new(Vec::new()))
+    Arc::new(Mutex::new(ActionState {
+        pending: vec![],
+        history: vec![],
+        result_tx: None,
+    }))
+}
+
+/// Add a pending action unless an action with the same name is already queued.
+pub fn push_pending(actions: &SharedActions, pending: PendingAction) {
+    let mut state = actions.lock().unwrap();
+    if !state.pending.iter().any(|a| a.item.name == pending.item.name) {
+        state.pending.push(pending);
+    }
+}
+
+/// Remove a pending action by name.
+pub fn remove_pending(actions: &SharedActions, name: &str) {
+    let mut state = actions.lock().unwrap();
+    state.pending.retain(|a| a.item.name != name);
+}
+
+/// Move an action from pending to history, recording its outcome.
+pub fn record_history(
+    actions: &SharedActions,
+    item: ActionItem,
+    status: String,
+    result: Value,
+    error_message: String,
+) {
+    let mut state = actions.lock().unwrap();
+    state.pending.retain(|a| a.item.name != item.name);
+    state.history.push(HistoryAction {
+        item,
+        status,
+        result,
+        error_message,
+        completed_at: Utc::now(),
+    });
 }
 
 /// Poll the server for pending actions and merge them into the shared queue.
@@ -79,38 +137,32 @@ pub fn run(
             Ok(actions) => {
                 let new_count = actions.len();
                 if new_count != last_count {
-                    tracing::info!("actions: received {} pending action(s)", new_count);
+                    tracing::info!(
+                        "actions: received {} pending action(s) via HTTP",
+                        new_count
+                    );
                     last_count = new_count;
                 }
 
-                let mut queue = shared.lock().unwrap();
-                // Replace the queue with the server's current view, preserving
-                // any actions the user is already interacting with.
+                let mut state = shared.lock().unwrap();
                 let mut merged: Vec<PendingAction> = actions
                     .into_iter()
                     .map(PendingAction::from_item)
                     .collect();
-                for existing in queue.drain(..) {
+                for existing in state.pending.drain(..) {
                     if !merged.iter().any(|a| a.item.name == existing.item.name) {
                         merged.push(existing);
                     }
                 }
-                *queue = merged;
-                drop(queue);
+                state.pending = merged;
+                drop(state);
 
                 // Mark connection healthy through the stats handle.
-                let _ = super::stats::record_client_report(
-                    &stats,
-                    Utc::now(),
-                    0,
-                    0,
-                    0,
-                    0,
-                );
+                let _ = super::stats::record_client_report(&stats, Utc::now(), 0, 0, 0, 0);
             }
             Err(e) => {
-                tracing::warn!("actions poll failed: {}", e);
-                let _ = super::stats::record_failure(&stats, format!("actions poll: {}", e));
+                tracing::warn!("actions HTTP poll failed: {}", e);
+                let _ = super::stats::record_failure(&stats, format!("actions HTTP poll: {}", e));
             }
         }
 
@@ -118,7 +170,9 @@ pub fn run(
     }
 }
 
-fn poll(url: &str, token: &str) -> anyhow::Result<Vec<ActionItem>> {
+/// Low-level HTTP poll used by both the blocking poller and the websocket
+/// fallback path.
+pub fn poll(url: &str, token: &str) -> anyhow::Result<Vec<ActionItem>> {
     let body = serde_json::to_string(&json!({ "limit": 50 }))?;
     let resp = ureq::post(url)
         .set("Authorization", &format!("Bearer {}", token))
@@ -148,9 +202,14 @@ fn poll(url: &str, token: &str) -> anyhow::Result<Vec<ActionItem>> {
 }
 
 /// Execute the action plan for the chosen button and report the result.
+///
+/// Results are sent over the websocket result channel when available, falling
+/// back to the HTTP result endpoint. On success the action is moved from
+/// pending to history.
 pub fn execute_and_report(
     domain: &str,
     token: &str,
+    actions: SharedActions,
     action: &ActionItem,
     button: &ActionButton,
 ) -> anyhow::Result<()> {
@@ -215,11 +274,7 @@ pub fn execute_and_report(
                         (
                             "Failed",
                             json!({ "stdout": stdout }),
-                            format!(
-                                "exit code {:?}: {}",
-                                output.status.code(),
-                                stderr
-                            ),
+                            format!("exit code {:?}: {}", output.status.code(), stderr),
                         )
                     }
                 }
@@ -237,7 +292,41 @@ pub fn execute_and_report(
         ),
     };
 
-    report_result(domain, token, &action.name, status, &result, &error_message)
+    let status = status.to_string();
+
+    // Try the websocket result channel first.
+    let result_tx = {
+        let state = actions.lock().unwrap();
+        state.result_tx.clone()
+    };
+    if let Some(tx) = result_tx {
+        let msg = protocol::ActionMessage::action_result(
+            action.name.clone(),
+            status.clone(),
+            result.clone(),
+            error_message.clone(),
+        );
+        if tx.send(msg).is_ok() {
+            record_history(
+                &actions,
+                action.clone(),
+                status,
+                result,
+                error_message,
+            );
+            return Ok(());
+        }
+    }
+
+    report_result(domain, token, &action.name, &status, &result, &error_message)?;
+    record_history(
+        &actions,
+        action.clone(),
+        status,
+        result,
+        error_message,
+    );
+    Ok(())
 }
 
 fn report_result(

@@ -5,9 +5,15 @@ use iced::window;
 use iced::{Element, Length, Subscription, Task};
 use std::time::Duration;
 
-use crate::client::actions::{PendingAction, SharedActions};
+use crate::client::actions::{HistoryAction, PendingAction, SharedActions};
 use crate::client::frontend::{theme, tray};
 use crate::client::stats::{self, ClientStats, SharedStats};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Tab {
+    Pending,
+    History,
+}
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -16,6 +22,7 @@ pub enum Message {
     Quit,
     WindowOpened,
     WindowClosed(window::Id),
+    SwitchTab(Tab),
     ActionButtonPressed(usize, usize),
     ActionReported(String, Result<(), String>),
 }
@@ -29,8 +36,10 @@ pub struct State {
     dashboard: Option<window::Id>,
     snapshot: ClientStats,
     pending_actions: Vec<PendingAction>,
+    history_actions: Vec<HistoryAction>,
     reporting: Option<String>,
     last_action_count: usize,
+    current_tab: Tab,
 }
 
 /// Blocks the calling thread until the user quits from the tray menu.
@@ -68,8 +77,10 @@ fn boot(
         dashboard: None,
         snapshot: ClientStats::default(),
         pending_actions: Vec::new(),
+        history_actions: Vec::new(),
         reporting: None,
         last_action_count: 0,
+        current_tab: Tab::Pending,
     };
     (state, Task::none())
 }
@@ -94,13 +105,14 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 }
             }
 
-            // Pull the latest action queue from the poller.
-            let queue = state.actions.lock().unwrap().clone();
-            let new_count = queue.len();
-            state.pending_actions = queue;
+            // Pull the latest action state from the poller/websocket client.
+            let action_state = state.actions.lock().unwrap().clone();
+            let new_count = action_state.pending.len();
+            state.pending_actions = action_state.pending;
+            state.history_actions = action_state.history;
 
-            // Auto-open the dashboard when new actions arrive while none are
-            // currently being reported.
+            // Auto-open the dashboard when new pending actions arrive while
+            // none are currently being reported.
             if new_count > 0
                 && new_count != state.last_action_count
                 && state.reporting.is_none()
@@ -126,6 +138,10 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             open.map(|_| Message::WindowOpened)
         }
         Message::WindowOpened => Task::none(),
+        Message::SwitchTab(tab) => {
+            state.current_tab = tab;
+            Task::none()
+        }
         Message::WindowClosed(id) => {
             if state.dashboard == Some(id) {
                 state.dashboard = None;
@@ -142,6 +158,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             };
             state.reporting = Some(action.item.name.clone());
 
+            let actions = state.actions.clone();
             let domain = state.domain.clone();
             let token = state.token.clone();
             let name = action.item.name.clone();
@@ -150,7 +167,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 async move {
                     let result = tokio::task::spawn_blocking(move || {
                         crate::client::actions::execute_and_report(
-                            &domain, &token, &action.item, &button,
+                            &domain, &token, actions, &action.item, &button,
                         )
                     })
                     .await;
@@ -166,14 +183,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             state.reporting = None;
             if let Err(e) = &result {
                 tracing::warn!("failed to report action {}: {}", name, e);
-            } else {
-                // Remove the action from the shared queue so the poller does
-                // not keep showing it until the next server refresh.
-                let mut queue = state.actions.lock().unwrap();
-                queue.retain(|a| a.item.name != name);
-                state.pending_actions.retain(|a| a.item.name != name);
-                state.last_action_count = state.pending_actions.len();
             }
+            // execute_and_report moves the action from pending to history on
+            // success; the next Tick refreshes both lists.
             Task::none()
         }
     }
@@ -253,10 +265,28 @@ fn view(state: &State, _id: window::Id) -> Element<'_, Message> {
             .spacing(10),
         );
 
-    if !state.pending_actions.is_empty() {
-        content = content.push(section("Pending actions"));
-        for (a_idx, action) in state.pending_actions.iter().enumerate() {
-            content = content.push(action_card(action, a_idx, &state.reporting));
+    content = content.push(tab_bar(&state.current_tab));
+
+    match state.current_tab {
+        Tab::Pending => {
+            if state.pending_actions.is_empty() {
+                content = content.push(empty_pending());
+            } else {
+                content = content.push(section("Pending actions"));
+                for (a_idx, action) in state.pending_actions.iter().enumerate() {
+                    content = content.push(action_card(action, a_idx, &state.reporting));
+                }
+            }
+        }
+        Tab::History => {
+            if state.history_actions.is_empty() {
+                content = content.push(empty_history());
+            } else {
+                content = content.push(section("History"));
+                for action in state.history_actions.iter().rev() {
+                    content = content.push(history_card(action));
+                }
+            }
         }
     }
 
@@ -268,6 +298,51 @@ fn view(state: &State, _id: window::Id) -> Element<'_, Message> {
             .height(Length::Fill),
     )
     .into()
+}
+
+fn tab_bar(active: &Tab) -> Element<'_, Message> {
+    row![
+        tab_button("Pending", Tab::Pending, active),
+        tab_button("History", Tab::History, active),
+    ]
+    .spacing(8)
+    .into()
+}
+
+fn empty_pending() -> Element<'static, Message> {
+    container(
+        text("No pending actions")
+            .size(11)
+            .font(theme::MONO)
+            .color(theme::DIM),
+    )
+    .padding(20)
+    .center_x(Length::Fill)
+    .into()
+}
+
+fn empty_history() -> Element<'static, Message> {
+    container(
+        text("No completed actions yet")
+            .size(11)
+            .font(theme::MONO)
+            .color(theme::DIM),
+    )
+    .padding(20)
+    .center_x(Length::Fill)
+    .into()
+}
+
+fn tab_button<'a>(label: &'a str, tab: Tab, active: &'a Tab) -> Element<'a, Message> {
+    let color = if active == &tab {
+        theme::CYAN
+    } else {
+        theme::DIM
+    };
+    button(text(label).size(12).font(theme::MONO).color(color))
+        .style(theme::button_style)
+        .on_press(Message::SwitchTab(tab))
+        .into()
 }
 
 fn action_card<'a>(
@@ -318,6 +393,56 @@ fn action_card<'a>(
             buttons = buttons.push(btn);
         }
         card = card.push(buttons);
+    }
+
+    container(card)
+        .style(theme::tile_style)
+        .padding(12)
+        .width(Length::Fill)
+        .into()
+}
+
+fn history_card(action: &HistoryAction) -> Element<'_, Message> {
+    let result_text = serde_json::to_string(&action.result).unwrap_or_else(|_| "{}".into());
+    let result_short = if result_text.len() > 80 {
+        format!("{}...", &result_text[..80])
+    } else {
+        result_text
+    };
+
+    let status_color = match action.status.as_str() {
+        "Failed" => theme::RED,
+        "Completed" => theme::GREEN,
+        _ => theme::AMBER,
+    };
+
+    let mut card = column![
+        text(&action.item.title)
+            .size(13)
+            .font(theme::MONO)
+            .color(theme::TEXT),
+        text(format!("Status: {}", action.status))
+            .size(11)
+            .font(theme::MONO)
+            .color(status_color),
+        text(action.completed_at.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+            .size(11)
+            .font(theme::MONO)
+            .color(theme::DIM),
+        text(format!("Result: {}", result_short))
+            .size(11)
+            .font(theme::MONO)
+            .color(theme::DIM),
+    ]
+    .spacing(6);
+
+    if !action.error_message.is_empty() {
+        card = card.push(
+            text(format!("Error: {}", action.error_message))
+                .size(11)
+                .font(theme::MONO)
+                .color(theme::RED),
+        );
     }
 
     container(card)

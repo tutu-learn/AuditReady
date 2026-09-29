@@ -86,6 +86,10 @@ if [ -f "$TMP_DIR/auditready/update-macos.sh" ]; then
     install -m 755 "$TMP_DIR/auditready/update-macos.sh" "$INSTALL_DIR/auditready-update"
     echo "Installed auditready-update to ${INSTALL_DIR}/auditready-update"
 fi
+if [ -f "$TMP_DIR/auditready/update-client-macos.sh" ]; then
+    install -m 755 "$TMP_DIR/auditready/update-client-macos.sh" "$INSTALL_DIR/auditready-update-client"
+    echo "Installed auditready-update-client to ${INSTALL_DIR}/auditready-update-client"
+fi
 
 # Prepare config directory.
 mkdir -p "$CONFIG_DIR"

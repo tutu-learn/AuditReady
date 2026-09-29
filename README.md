@@ -93,7 +93,13 @@ To install a specific release:
 ### macOS
 
 DNS traffic capture on macOS uses `tcpdump` and requires the agent to run as
-root. The easiest way is to install it as a LaunchDaemon:
+root. The easiest way is to install it as a LaunchDaemon.
+
+> macOS does not ship `wget` by default. The commands below use `wget`; swap
+> it for `curl -fsSL -O <url>` if `wget` is not installed, or install `wget`
+> with `brew install wget`.
+
+#### Install agent only
 
 ```bash
 wget -q https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/install-macos.sh
@@ -111,25 +117,36 @@ The installer will:
 
 - Detect your architecture (`x86_64` or `arm64`) and download the latest
   release binary.
-- Install `auditready` and the `auditready-restart` helper to `/usr/local/bin`.
+- Install `auditready`, `auditready-restart`, and `auditready-update` helpers to `/usr/local/bin`.
 - Prompt for the backend domain and agent token, and write the configuration
   to `/etc/auditready/appsettings.json` (mode `600`).
 - Create, load, and start the `com.auditready.agent` LaunchDaemon as root.
+
+#### Install with client mode
+
+Client mode is a second, per-user instance that monitors clipboard, mouse,
+file changes, and pending actions. It shows a tray icon and dashboard in the
+logged-in user's menu bar.
+
+```bash
+wget -q https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/install-macos.sh
+chmod +x install-macos.sh
+sudo MODE=client ./install-macos.sh
+```
+
+The client-mode installer additionally installs the `auditready-update-client`
+helper and registers the `com.auditready.client` LaunchAgent.
+
+Paste capture (Cmd+V) requires the Accessibility permission granted to
+`/usr/local/bin/auditready` under **System Settings → Privacy & Security →
+Accessibility**. Without it, only copy events are reported.
 
 For non-interactive / automated installs, pass the values as environment
 variables:
 
 ```bash
 sudo DOMAIN=api.example.com TOKEN=abc123 ./install-macos.sh
-```
-
-Install client mode alongside the regular agent (per-user clipboard/mouse/file
-monitoring + tray dashboard):
-
-```bash
-wget -q https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/install-macos.sh
-chmod +x install-macos.sh
-sudo MODE=client ./install-macos.sh
+sudo DOMAIN=api.example.com TOKEN=abc123 MODE=client ./install-macos.sh
 ```
 
 Verify the service after installation:
@@ -268,6 +285,12 @@ Install client mode alongside the regular agent:
   Settings → Privacy & Security → Accessibility); without it the agent logs a
   warning once and reports copy events only.
 
+The client agent also opens a WebSocket to `/audit_ready/actions/ws`. The
+server pushes interactive actions to the agent as soon as they are created;
+the agent shows them in the dashboard's **Pending** tab. Results are sent back
+over the same WebSocket, with the older HTTP poll/result endpoints kept as a
+fallback.
+
 The `restart-windows.ps1` and `restart-macos.sh` helpers also restart the
 client task/agent when it is installed.
 
@@ -283,8 +306,11 @@ it's visible that it's running:
 
 - Left-click the tray icon to open a small dashboard window: connection
   status, last/next report time, cumulative clipboard/mouse/file/
-  sensitive-hit counters, and the latest running-process/network counts.
-  Right-click for a menu with the same "Open Dashboard" option plus "Quit".
+  sensitive-hit counters, the latest running-process/network counts, and an
+  **Actions** area with **Pending** and **History** tabs. Pending actions show
+  their title, payload summary, and action buttons; completed or failed actions
+  move to the History tab. Right-click for a menu with the same "Open Dashboard"
+  option plus "Quit".
 - If the client report or telemetry push can't reach the backend for **10
   continuous minutes**, a modal "connection lost" popup appears (the user
   must click OK) — no matter what they're doing, since it's a real dialog
@@ -355,6 +381,8 @@ Invoke-WebRequest `
 
 ## Managing the agent (macOS)
 
+### Root agent (`com.auditready.agent`)
+
 ```bash
 # Status and logs
 sudo launchctl list com.auditready.agent
@@ -363,26 +391,26 @@ sudo tail -f /etc/auditready/auditready.log
 # Restart
 sudo auditready-restart
 
-# Update to the latest release (keeps your config, restarts the daemon)
+# Update to the latest release (keeps config, restarts daemon + client)
 sudo auditready-update
-# or fetch the script directly:
+
+# Or fetch the update script directly
 wget -q https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/update-macos.sh
 chmod +x update-macos.sh
 sudo ./update-macos.sh            # or: sudo VERSION=<tag> ./update-macos.sh
 ```
 
-### Client mode (per-user LaunchAgent)
+### Client mode (`com.auditready.client`)
 
-When client mode is installed, the per-user agent runs separately from the
-root LaunchDaemon. Replace `$(stat -f '%Su' /dev/console)` with the actual
-username if you are running these remotely (they must target the user's GUI
-session, not `root`).
+The per-user client agent runs in the logged-in user's GUI session, separate
+from the root LaunchDaemon. Replace `$(stat -f '%Su' /dev/console)` with the
+actual username when running remotely.
 
 ```bash
 CONSOLE_USER=$(stat -f '%Su' /dev/console)
 CONSOLE_UID=$(id -u "$CONSOLE_USER")
 
-# Restart the client agent (picks up a new binary after update)
+# Restart the client agent
 sudo launchctl kickstart -k "gui/${CONSOLE_UID}/com.auditready.client"
 
 # View client logs
@@ -392,13 +420,25 @@ tail -f /etc/auditready/auditready-client.log
 sudo launchctl bootout "gui/${CONSOLE_UID}" /Library/LaunchAgents/com.auditready.client.plist
 
 # Update only the client agent (keeps config, restarts the per-user LaunchAgent)
+sudo auditready-update-client
+# or fetch the script directly:
 wget -q https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/update-client-macos.sh
 chmod +x update-client-macos.sh
-sudo ./update-client-macos.sh
+sudo ./update-client-macos.sh     # or: sudo VERSION=<tag> ./update-client-macos.sh
 ```
 
-`sudo auditready-update` already restarts the client agent for the currently
-logged-in user when it is installed.
+`sudo auditready-update` also restarts the client agent when it is installed.
+
+## Uninstall (macOS)
+
+```bash
+wget -q https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/uninstall-macos.sh
+chmod +x uninstall-macos.sh
+sudo ./uninstall-macos.sh
+```
+
+This removes the LaunchDaemon, LaunchAgent, binaries, helper scripts, and
+`/etc/auditready`.
 
 ## Uninstall (Linux)
 
