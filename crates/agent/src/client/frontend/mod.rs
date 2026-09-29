@@ -23,6 +23,8 @@ pub use dashboard::run;
 pub fn run(
     _stats: super::stats::SharedStats,
     _actions: super::actions::SharedActions,
+    _domain: String,
+    _token: String,
 ) -> anyhow::Result<()> {
     tracing::warn!(
         "client tray/dashboard UI is not supported on this platform (Windows or macOS only); running headless"
