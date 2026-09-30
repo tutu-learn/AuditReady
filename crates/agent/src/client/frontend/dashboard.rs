@@ -117,14 +117,19 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             state.scheduled_actions = action_state.scheduled;
             state.history_actions = action_state.history;
 
-            // Auto-open the dashboard when new pending actions arrive while
-            // none are currently being reported.
+            // Force a native modal alert when new pending actions arrive while
+            // the dashboard is closed, then open the dashboard. This mirrors the
+            // connection-lost/restored alerts and shows above other apps.
             if new_count > 0
                 && new_count != state.last_action_count
                 && state.reporting.is_none()
                 && state.dashboard.is_none()
             {
                 state.last_action_count = new_count;
+                if let Some(action) = state.pending_actions.first() {
+                    let title = action.item.title.clone();
+                    return Task::perform(action_alert(title), |_| Message::OpenDashboard);
+                }
                 return Task::done(Message::OpenDashboard);
             }
             state.last_action_count = new_count;
@@ -475,6 +480,31 @@ fn action_card<'a>(
         .padding(12)
         .width(Length::Fill)
         .into()
+}
+
+/// Show a native modal alert for a new pending action, forcing it above other
+/// apps the same way the connection-lost/restored alerts do. Only supported on
+/// macOS and Windows; on Linux this is a no-op.
+#[cfg(any(target_os = "macos", windows))]
+async fn action_alert(title: String) {
+    use rfd::{MessageButtons, MessageDialog, MessageLevel};
+    let _ = tokio::task::spawn_blocking(move || {
+        MessageDialog::new()
+            .set_title("AuditReady — action required")
+            .set_description(format!(
+                "{}\n\nClick OK to open the dashboard and respond.",
+                title
+            ))
+            .set_level(MessageLevel::Info)
+            .set_buttons(MessageButtons::Ok)
+            .show();
+    })
+    .await;
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+async fn action_alert(_title: String) {
+    tracing::info!("action required alert not shown on this platform");
 }
 
 fn action_popup<'a>(
