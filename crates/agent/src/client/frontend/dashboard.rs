@@ -199,6 +199,14 @@ fn subscription(_state: &State) -> Subscription<Message> {
 }
 
 fn view(state: &State, _id: window::Id) -> Element<'_, Message> {
+    // When pending actions exist, show the action popup fullscreen so the user
+    // sees and responds to the action immediately. The normal dashboard is
+    // accessible once all pending actions are cleared or via the history view
+    // when no actions are pending.
+    if let Some(action) = state.pending_actions.first() {
+        return action_popup(action, 0, &state.reporting);
+    }
+
     let s = &state.snapshot;
 
     let last_report = s
@@ -269,14 +277,7 @@ fn view(state: &State, _id: window::Id) -> Element<'_, Message> {
 
     match state.current_tab {
         Tab::Pending => {
-            if state.pending_actions.is_empty() {
-                content = content.push(empty_pending());
-            } else {
-                content = content.push(section("Pending actions"));
-                for (a_idx, action) in state.pending_actions.iter().enumerate() {
-                    content = content.push(action_card(action, a_idx, &state.reporting));
-                }
-            }
+            content = content.push(empty_pending());
         }
         Tab::History => {
             if state.history_actions.is_empty() {
@@ -345,7 +346,10 @@ fn tab_button<'a>(label: &'a str, tab: Tab, active: &'a Tab) -> Element<'a, Mess
         .into()
 }
 
-fn action_card<'a>(
+/// Full-screen action popup shown when pending actions arrive. The window
+/// auto-opens on the user's machine and the user must respond before the
+/// underlying dashboard is visible again.
+fn action_popup<'a>(
     action: &'a PendingAction,
     action_idx: usize,
     reporting: &'a Option<String>,
@@ -353,52 +357,83 @@ fn action_card<'a>(
     let reporting_this = reporting.as_ref() == Some(&action.item.name);
 
     let payload = serde_json::to_string(&action.item.payload).unwrap_or_else(|_| "{}".into());
-    let payload_short = if payload.len() > 80 {
-        format!("{}...", &payload[..80])
+    let payload_text = if payload.len() > 240 {
+        format!("{}...", &payload[..240])
     } else {
         payload
     };
 
-    let mut card = column![
-        text(&action.item.title).size(13).font(theme::MONO).color(theme::TEXT),
-        text(format!("Type: {}", action.item.action_type))
-            .size(11)
+    let mut body = column![
+        text("ACTION REQUIRED")
+            .size(12)
             .font(theme::MONO)
-            .color(theme::DIM),
-        text(format!("Payload: {}", payload_short))
-            .size(11)
+            .color(theme::AMBER),
+        text(&action.item.title)
+            .size(22)
+            .font(theme::MONO)
+            .color(theme::TEXT),
+        text(format!("Type: {}", action.item.action_type))
+            .size(12)
             .font(theme::MONO)
             .color(theme::DIM),
     ]
-    .spacing(6);
+    .spacing(12)
+    .align_x(iced::alignment::Horizontal::Center);
+
+    if payload_text != "{}" {
+        body = body.push(
+            text(format!("Payload: {}", payload_text))
+                .size(11)
+                .font(theme::MONO)
+                .color(theme::DIM),
+        );
+    }
+
+    if !action.item.assigned_user.is_empty() {
+        body = body.push(
+            text(format!("Assigned to: {}", action.item.assigned_user))
+                .size(11)
+                .font(theme::MONO)
+                .color(theme::DIM),
+        );
+    }
 
     if reporting_this {
-        card = card.push(
+        body = body.push(
             text("Reporting ...")
-                .size(11)
+                .size(13)
                 .font(theme::MONO)
                 .color(theme::AMBER),
         );
     } else {
-        let mut buttons = row![].spacing(8);
+        let mut buttons = row![].spacing(12);
         for (b_idx, btn_info) in action.buttons.iter().enumerate() {
             let btn = button(
                 text(&btn_info.label)
-                    .size(11)
+                    .size(13)
                     .font(theme::MONO)
                     .color(theme::TEXT),
             )
             .style(theme::button_style)
+            .padding([10, 18])
             .on_press(Message::ActionButtonPressed(action_idx, b_idx));
             buttons = buttons.push(btn);
         }
-        card = card.push(buttons);
+        body = body.push(buttons);
     }
 
-    container(card)
+    let popup = container(body)
         .style(theme::tile_style)
-        .padding(12)
+        .padding(28)
+        .width(Length::Fixed(420.0))
+        .align_x(iced::alignment::Horizontal::Center);
+
+    container(popup)
+        .style(theme::root_style)
         .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(iced::alignment::Horizontal::Center)
+        .align_y(iced::alignment::Vertical::Center)
         .into()
 }
 
