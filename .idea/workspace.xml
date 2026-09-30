@@ -17,16 +17,8 @@
     </cargoProject>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d602f251-8b3a-4e38-81e3-dbc9f37ff262" name="Changes" comment="feat(scripts): enable detached updates for AuditReady agents across platforms&#10;&#10;Ensure update scripts for macOS, Windows, and Linux re-launch in detached mode when initiated by a running AuditReady agent. This prevents update interruptions caused by the update process stopping the agent mid-update. Logs are redirected to dedicated update log files for each platform.">
+    <list default="true" id="d602f251-8b3a-4e38-81e3-dbc9f37ff262" name="Changes" comment="feat(client): add full-screen action popup for pending actions and simplify pending tab UI&#10;&#10;- Introduce a full-screen popup to display pending actions, ensuring users address them before accessing the dashboard.&#10;- Simplify the pending tab by removing redundant action card rendering logic.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/crates/agent/src/client/frontend/dashboard.rs" beforeDir="false" afterPath="$PROJECT_DIR$/crates/agent/src/client/frontend/dashboard.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/crates/agent/src/client/frontend/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/crates/agent/src/client/frontend/mod.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/crates/agent/src/client/frontend/theme.rs" beforeDir="false" afterPath="$PROJECT_DIR$/crates/agent/src/client/frontend/theme.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/crates/agent/src/client/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/crates/agent/src/client/mod.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/crates/agent/src/client/ui.rs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/crates/agent/src/config.rs" beforeDir="false" afterPath="$PROJECT_DIR$/crates/agent/src/config.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/crates/agent/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/crates/agent/src/main.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -34,7 +26,7 @@
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="76" />
+    <option name="cachedIndexableFilesCount" value="80" />
     <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="ExecutionTargetManager" SELECTED_TARGET="RsBuildProfile:test" />
@@ -213,6 +205,11 @@
     <MESSAGE value="docs(README): update Windows client instructions with script download examples" />
     <MESSAGE value="feat(scripts): enable detached update mode for AuditReady agent scripts&#10;&#10;Add logic to `update-macos.sh`, `update-client-windows.ps1`, `update-windows.ps1`, and `update.sh` to allow detached re-execution during updates. Ensures updates persist even if the parent process or service is terminated. Logs update processes to appropriate locations for troubleshooting." />
     <MESSAGE value="feat(scripts): enable detached updates for AuditReady agents across platforms&#10;&#10;Ensure update scripts for macOS, Windows, and Linux re-launch in detached mode when initiated by a running AuditReady agent. This prevents update interruptions caused by the update process stopping the agent mid-update. Logs are redirected to dedicated update log files for each platform." />
-    <option name="LAST_COMMIT_MESSAGE" value="feat(scripts): enable detached updates for AuditReady agents across platforms&#10;&#10;Ensure update scripts for macOS, Windows, and Linux re-launch in detached mode when initiated by a running AuditReady agent. This prevents update interruptions caused by the update process stopping the agent mid-update. Logs are redirected to dedicated update log files for each platform." />
+    <MESSAGE value="refactor(client): remove Windows/macOS tray UI and stats dashboard, add unified frontend module&#10;&#10;Replace the platform-specific tray UI and stats dashboard with a cross-platform frontend module utilizing a shared domain+token model. Update client mode initialization to provide separate stats and actions handles for the new frontend." />
+    <MESSAGE value="feat(client): add domain and token parameters to frontend initialization" />
+    <MESSAGE value="feat(scripts): add macOS client update script and README instructions&#10;&#10;Introduce `update-client-macos.sh` to update the AuditReady client-mode LaunchAgent on macOS, replacing the binary and restarting the agent. Update the README with detailed usage instructions." />
+    <MESSAGE value="feat(client+scripts): migrate to WebSocket actions and improve macOS client handling&#10;&#10;- Replace legacy action polling with WebSocket-based action push channel and add fallback HTTP polling for reliability.  &#10;- Update macOS scripts to handle client-specific updates (`auditready-update-client`) and support new functionality.  &#10;- Enhance README with client mode installation, WebSocket actions, and complete uninstall instructions.  &#10;- Introduce `Tab` UI for distinguishing pending and history actions in the dashboard." />
+    <MESSAGE value="feat(client): add full-screen action popup for pending actions and simplify pending tab UI&#10;&#10;- Introduce a full-screen popup to display pending actions, ensuring users address them before accessing the dashboard.&#10;- Simplify the pending tab by removing redundant action card rendering logic." />
+    <option name="LAST_COMMIT_MESSAGE" value="feat(client): add full-screen action popup for pending actions and simplify pending tab UI&#10;&#10;- Introduce a full-screen popup to display pending actions, ensuring users address them before accessing the dashboard.&#10;- Simplify the pending tab by removing redundant action card rendering logic." />
   </component>
 </project>

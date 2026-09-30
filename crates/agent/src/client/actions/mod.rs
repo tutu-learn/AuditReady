@@ -71,6 +71,7 @@ pub struct HistoryAction {
 #[derive(Clone)]
 pub struct ActionState {
     pub pending: Vec<PendingAction>,
+    pub scheduled: Vec<PendingAction>,
     pub history: Vec<HistoryAction>,
     pub result_tx: Option<tokio::sync::mpsc::UnboundedSender<protocol::ActionMessage>>,
 }
@@ -81,26 +82,64 @@ pub type SharedActions = Arc<Mutex<ActionState>>;
 pub fn new_shared() -> SharedActions {
     Arc::new(Mutex::new(ActionState {
         pending: vec![],
+        scheduled: vec![],
         history: vec![],
         result_tx: None,
     }))
 }
 
-/// Add a pending action unless an action with the same name is already queued.
-pub fn push_pending(actions: &SharedActions, pending: PendingAction) {
-    let mut state = actions.lock().unwrap();
-    if !state.pending.iter().any(|a| a.item.name == pending.item.name) {
-        state.pending.push(pending);
+/// Returns true if the action's due date is in the future.
+fn is_scheduled(due_at: &str) -> bool {
+    if due_at.is_empty() {
+        return false;
+    }
+    match chrono::DateTime::parse_from_rfc3339(due_at) {
+        Ok(dt) => dt.with_timezone(&Utc) > Utc::now(),
+        Err(_) => false,
     }
 }
 
-/// Remove a pending action by name.
+/// Add an action to either pending or scheduled based on its due date.
+pub fn push_action(actions: &SharedActions, pending: PendingAction) {
+    let mut state = actions.lock().unwrap();
+    let target = if is_scheduled(&pending.item.due_at) {
+        &mut state.scheduled
+    } else {
+        &mut state.pending
+    };
+    if !target.iter().any(|a| a.item.name == pending.item.name) {
+        target.push(pending);
+    }
+}
+
+/// Promote scheduled actions whose due date has arrived to pending.
+pub fn promote_due_actions(actions: &SharedActions) {
+    let mut state = actions.lock().unwrap();
+    let mut still_scheduled = Vec::new();
+    let mut promoted = Vec::new();
+    for action in state.scheduled.drain(..) {
+        if is_scheduled(&action.item.due_at) {
+            still_scheduled.push(action);
+        } else {
+            promoted.push(action);
+        }
+    }
+    state.scheduled = still_scheduled;
+    for p in promoted {
+        if !state.pending.iter().any(|a| a.item.name == p.item.name) {
+            state.pending.push(p);
+        }
+    }
+}
+
+/// Remove an action by name from pending and scheduled queues.
 pub fn remove_pending(actions: &SharedActions, name: &str) {
     let mut state = actions.lock().unwrap();
     state.pending.retain(|a| a.item.name != name);
+    state.scheduled.retain(|a| a.item.name != name);
 }
 
-/// Move an action from pending to history, recording its outcome.
+/// Move an action from pending/scheduled to history, recording its outcome.
 pub fn record_history(
     actions: &SharedActions,
     item: ActionItem,
@@ -110,6 +149,7 @@ pub fn record_history(
 ) {
     let mut state = actions.lock().unwrap();
     state.pending.retain(|a| a.item.name != item.name);
+    state.scheduled.retain(|a| a.item.name != item.name);
     state.history.push(HistoryAction {
         item,
         status,
@@ -164,17 +204,24 @@ pub fn run(
                 }
 
                 let mut state = shared.lock().unwrap();
-                let mut merged: Vec<PendingAction> = actions
+                let incoming: Vec<PendingAction> = actions
                     .into_iter()
                     .map(PendingAction::from_item)
                     .collect();
-                for existing in state.pending.drain(..) {
-                    if !merged.iter().any(|a| a.item.name == existing.item.name) {
-                        merged.push(existing);
+                // Preserve existing pending and scheduled actions that are not
+                // in the server's current list, then re-categorize everything.
+                let mut existing: Vec<PendingAction> = state.pending.drain(..).collect();
+                existing.extend(state.scheduled.drain(..));
+                let mut merged: Vec<PendingAction> = incoming;
+                for e in existing {
+                    if !merged.iter().any(|a| a.item.name == e.item.name) {
+                        merged.push(e);
                     }
                 }
-                state.pending = merged;
                 drop(state);
+                for action in merged {
+                    push_action(&shared, action);
+                }
 
                 // Mark connection healthy through the stats handle.
                 let _ = super::stats::record_client_report(&stats, Utc::now(), 0, 0, 0, 0);

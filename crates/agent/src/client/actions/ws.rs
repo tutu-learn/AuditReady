@@ -13,7 +13,7 @@ use tokio_tungstenite::{
 };
 
 use super::protocol::ActionMessage;
-use super::{poll, push_pending, remove_pending, PendingAction, SharedActions};
+use super::{poll, push_action, remove_pending, PendingAction, SharedActions};
 
 /// Maximum size of a single action message in bytes.
 const MAX_MESSAGE_SIZE: usize = 256 * 1024;
@@ -229,7 +229,7 @@ impl ActionWebSocketClient {
     async fn handle_message(&self, msg: ActionMessage) -> Result<()> {
         match msg {
             ActionMessage::ActionPush { action } => {
-                push_pending(&self.actions, PendingAction::from_item(action));
+                push_action(&self.actions, PendingAction::from_item(action));
             }
             ActionMessage::ActionAck { name } => {
                 remove_pending(&self.actions, &name);
@@ -267,7 +267,7 @@ impl ActionWebSocketClient {
         };
 
         for action in actions {
-            push_pending(&self.actions, PendingAction::from_item(action));
+            push_action(&self.actions, PendingAction::from_item(action));
         }
         Ok(())
     }

@@ -95,14 +95,13 @@ To install a specific release:
 DNS traffic capture on macOS uses `tcpdump` and requires the agent to run as
 root. The easiest way is to install it as a LaunchDaemon.
 
-> macOS does not ship `wget` by default. The commands below use `wget`; swap
-> it for `curl -fsSL -O <url>` if `wget` is not installed, or install `wget`
-> with `brew install wget`.
+> macOS ships `curl` by default. The commands below use `curl`; install
+> `wget` with `brew install wget` if you prefer it.
 
 #### Install agent only
 
 ```bash
-wget -q https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/install-macos.sh
+curl -fsSL -o install-macos.sh https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/install-macos.sh
 chmod +x install-macos.sh
 sudo ./install-macos.sh
 ```
@@ -129,7 +128,7 @@ file changes, and pending actions. It shows a tray icon and dashboard in the
 logged-in user's menu bar.
 
 ```bash
-wget -q https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/install-macos.sh
+curl -fsSL -o install-macos.sh https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/install-macos.sh
 chmod +x install-macos.sh
 sudo MODE=client ./install-macos.sh
 ```
@@ -307,10 +306,11 @@ it's visible that it's running:
 - Left-click the tray icon to open a small dashboard window: connection
   status, last/next report time, cumulative clipboard/mouse/file/
   sensitive-hit counters, the latest running-process/network counts, and an
-  **Actions** area with **Pending** and **History** tabs. Pending actions show
-  their title, payload summary, and action buttons; completed or failed actions
-  move to the History tab. Right-click for a menu with the same "Open Dashboard"
-  option plus "Quit".
+  **Actions** area with **Pending**, **Scheduled**, and **History** tabs.
+  Pending actions show their title, payload summary, and action buttons;
+  actions with a future `due_at` appear under Scheduled until they become due;
+  completed or failed actions move to the History tab. Right-click for a menu
+  with the same "Open Dashboard" option plus "Quit".
 - If the client report or telemetry push can't reach the backend for **10
   continuous minutes**, a modal "connection lost" popup appears (the user
   must click OK) — no matter what they're doing, since it's a real dialog
@@ -395,7 +395,7 @@ sudo auditready-restart
 sudo auditready-update
 
 # Or fetch the update script directly
-wget -q https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/update-macos.sh
+curl -fsSL -o update-macos.sh https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/update-macos.sh
 chmod +x update-macos.sh
 sudo ./update-macos.sh            # or: sudo VERSION=<tag> ./update-macos.sh
 ```
@@ -422,7 +422,7 @@ sudo launchctl bootout "gui/${CONSOLE_UID}" /Library/LaunchAgents/com.auditready
 # Update only the client agent (keeps config, restarts the per-user LaunchAgent)
 sudo auditready-update-client
 # or fetch the script directly:
-wget -q https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/update-client-macos.sh
+curl -fsSL -o update-client-macos.sh https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/update-client-macos.sh
 chmod +x update-client-macos.sh
 sudo ./update-client-macos.sh     # or: sudo VERSION=<tag> ./update-client-macos.sh
 ```
@@ -432,7 +432,7 @@ sudo ./update-client-macos.sh     # or: sudo VERSION=<tag> ./update-client-macos
 ## Uninstall (macOS)
 
 ```bash
-wget -q https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/uninstall-macos.sh
+curl -fsSL -o uninstall-macos.sh https://raw.githubusercontent.com/tutu-learn/AuditReady/main/scripts/uninstall-macos.sh
 chmod +x uninstall-macos.sh
 sudo ./uninstall-macos.sh
 ```

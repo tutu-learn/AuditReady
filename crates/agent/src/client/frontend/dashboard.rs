@@ -12,6 +12,7 @@ use crate::client::stats::{self, ClientStats, SharedStats};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Tab {
     Pending,
+    Scheduled,
     History,
 }
 
@@ -36,6 +37,7 @@ pub struct State {
     dashboard: Option<window::Id>,
     snapshot: ClientStats,
     pending_actions: Vec<PendingAction>,
+    scheduled_actions: Vec<PendingAction>,
     history_actions: Vec<HistoryAction>,
     reporting: Option<String>,
     last_action_count: usize,
@@ -77,6 +79,7 @@ fn boot(
         dashboard: None,
         snapshot: ClientStats::default(),
         pending_actions: Vec::new(),
+        scheduled_actions: Vec::new(),
         history_actions: Vec::new(),
         reporting: None,
         last_action_count: 0,
@@ -105,10 +108,13 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 }
             }
 
-            // Pull the latest action state from the poller/websocket client.
+            // Promote any scheduled actions that are now due, then pull the
+            // latest state for rendering.
+            crate::client::actions::promote_due_actions(&state.actions);
             let action_state = state.actions.lock().unwrap().clone();
             let new_count = action_state.pending.len();
             state.pending_actions = action_state.pending;
+            state.scheduled_actions = action_state.scheduled;
             state.history_actions = action_state.history;
 
             // Auto-open the dashboard when new pending actions arrive while
@@ -277,7 +283,24 @@ fn view(state: &State, _id: window::Id) -> Element<'_, Message> {
 
     match state.current_tab {
         Tab::Pending => {
-            content = content.push(empty_pending());
+            if state.pending_actions.is_empty() {
+                content = content.push(empty_pending());
+            } else {
+                content = content.push(section("Pending actions"));
+                for (a_idx, action) in state.pending_actions.iter().enumerate() {
+                    content = content.push(action_card(action, a_idx, &state.reporting));
+                }
+            }
+        }
+        Tab::Scheduled => {
+            if state.scheduled_actions.is_empty() {
+                content = content.push(empty_scheduled());
+            } else {
+                content = content.push(section("Scheduled actions"));
+                for action in state.scheduled_actions.iter() {
+                    content = content.push(scheduled_card(action));
+                }
+            }
         }
         Tab::History => {
             if state.history_actions.is_empty() {
@@ -304,6 +327,7 @@ fn view(state: &State, _id: window::Id) -> Element<'_, Message> {
 fn tab_bar(active: &Tab) -> Element<'_, Message> {
     row![
         tab_button("Pending", Tab::Pending, active),
+        tab_button("Scheduled", Tab::Scheduled, active),
         tab_button("History", Tab::History, active),
     ]
     .spacing(8)
@@ -334,6 +358,53 @@ fn empty_history() -> Element<'static, Message> {
     .into()
 }
 
+fn empty_scheduled() -> Element<'static, Message> {
+    container(
+        text("No scheduled actions")
+            .size(11)
+            .font(theme::MONO)
+            .color(theme::DIM),
+    )
+    .padding(20)
+    .center_x(Length::Fill)
+    .into()
+}
+
+fn scheduled_card(action: &PendingAction) -> Element<'_, Message> {
+    let payload = serde_json::to_string(&action.item.payload).unwrap_or_else(|_| "{}".into());
+    let payload_short = if payload.len() > 80 {
+        format!("{}...", &payload[..80])
+    } else {
+        payload
+    };
+
+    let due_text = if action.item.due_at.is_empty() {
+        "Due: —".to_string()
+    } else {
+        format!("Due: {}", action.item.due_at)
+    };
+
+    container(
+        column![
+            text(&action.item.title).size(13).font(theme::MONO).color(theme::TEXT),
+            text(format!("Type: {}", action.item.action_type))
+                .size(11)
+                .font(theme::MONO)
+                .color(theme::DIM),
+            text(format!("Payload: {}", payload_short))
+                .size(11)
+                .font(theme::MONO)
+                .color(theme::DIM),
+            text(due_text).size(11).font(theme::MONO).color(theme::AMBER),
+        ]
+        .spacing(6),
+    )
+    .style(theme::tile_style)
+    .padding(12)
+    .width(Length::Fill)
+    .into()
+}
+
 fn tab_button<'a>(label: &'a str, tab: Tab, active: &'a Tab) -> Element<'a, Message> {
     let color = if active == &tab {
         theme::CYAN
@@ -349,6 +420,63 @@ fn tab_button<'a>(label: &'a str, tab: Tab, active: &'a Tab) -> Element<'a, Mess
 /// Full-screen action popup shown when pending actions arrive. The window
 /// auto-opens on the user's machine and the user must respond before the
 /// underlying dashboard is visible again.
+fn action_card<'a>(
+    action: &'a PendingAction,
+    action_idx: usize,
+    reporting: &'a Option<String>,
+) -> Element<'a, Message> {
+    let reporting_this = reporting.as_ref() == Some(&action.item.name);
+
+    let payload = serde_json::to_string(&action.item.payload).unwrap_or_else(|_| "{}".into());
+    let payload_short = if payload.len() > 80 {
+        format!("{}...", &payload[..80])
+    } else {
+        payload
+    };
+
+    let mut card = column![
+        text(&action.item.title).size(13).font(theme::MONO).color(theme::TEXT),
+        text(format!("Type: {}", action.item.action_type))
+            .size(11)
+            .font(theme::MONO)
+            .color(theme::DIM),
+        text(format!("Payload: {}", payload_short))
+            .size(11)
+            .font(theme::MONO)
+            .color(theme::DIM),
+    ]
+    .spacing(6);
+
+    if reporting_this {
+        card = card.push(
+            text("Reporting ...")
+                .size(11)
+                .font(theme::MONO)
+                .color(theme::AMBER),
+        );
+    } else {
+        let mut buttons = row![].spacing(8);
+        for (b_idx, btn_info) in action.buttons.iter().enumerate() {
+            let btn = button(
+                text(&btn_info.label)
+                    .size(11)
+                    .font(theme::MONO)
+                    .color(theme::TEXT),
+            )
+            .style(theme::button_style)
+            .on_press(Message::ActionButtonPressed(action_idx, b_idx));
+            buttons = buttons.push(btn);
+        }
+        card = card.push(buttons);
+    }
+
+    container(card)
+        .style(theme::tile_style)
+        .padding(12)
+        .width(Length::Fill)
+        .into()
+}
+
 fn action_popup<'a>(
     action: &'a PendingAction,
     action_idx: usize,
