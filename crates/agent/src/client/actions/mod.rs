@@ -119,6 +119,25 @@ pub fn record_history(
     });
 }
 
+/// Build an absolute HTTP URL from the configured domain.
+///
+/// `domain` is the host (and optional port) only; a scheme is added when
+/// missing (`http` for localhost, `https` otherwise), matching the telemetry
+/// publisher's behaviour.
+pub fn build_http_url(domain: &str, path: &str) -> String {
+    let base = if domain.starts_with("http://") || domain.starts_with("https://") {
+        domain.trim_end_matches('/').to_string()
+    } else {
+        let scheme = if domain.starts_with("localhost") {
+            "http"
+        } else {
+            "https"
+        };
+        format!("{}://{}", scheme, domain.trim_end_matches('/'))
+    };
+    format!("{}/{}", base, path.trim_start_matches('/'))
+}
+
 /// Poll the server for pending actions and merge them into the shared queue.
 /// Runs until the process exits; errors are logged and retried after the
 /// poll interval.
@@ -129,7 +148,7 @@ pub fn run(
     stats: SharedStats,
     poll_interval_seconds: u64,
 ) {
-    let url = format!("{}/audit_ready/actions/poll", domain.trim_end_matches('/'));
+    let url = build_http_url(domain, "/audit_ready/actions/poll");
     let mut last_count = 0usize;
 
     loop {
@@ -337,7 +356,7 @@ fn report_result(
     result: &Value,
     error_message: &str,
 ) -> anyhow::Result<()> {
-    let url = format!("{}/audit_ready/actions/result", domain.trim_end_matches('/'));
+    let url = build_http_url(domain, "/audit_ready/actions/result");
     let body = serde_json::to_string(&json!({
         "name": name,
         "status": status,
