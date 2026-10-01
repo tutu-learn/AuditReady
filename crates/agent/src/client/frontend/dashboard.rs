@@ -20,6 +20,7 @@ pub enum Tab {
 pub enum Message {
     Tick,
     OpenDashboard,
+    NoOp,
     Quit,
     WindowOpened,
     WindowClosed(window::Id),
@@ -117,18 +118,21 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             state.scheduled_actions = action_state.scheduled;
             state.history_actions = action_state.history;
 
-            // Force a native modal alert when new pending actions arrive while
-            // the dashboard is closed, then open the dashboard. This mirrors the
-            // connection-lost/restored alerts and shows above other apps.
-            if new_count > 0
-                && new_count != state.last_action_count
-                && state.reporting.is_none()
-                && state.dashboard.is_none()
-            {
+            // Force a native modal alert when new pending actions arrive, then
+            // bring the dashboard to the front. This mirrors the
+            // connection-lost/restored alerts and shows above other apps even
+            // when the dashboard is already open but hidden/minimized.
+            if new_count > state.last_action_count && state.reporting.is_none() {
                 state.last_action_count = new_count;
                 if let Some(action) = state.pending_actions.first() {
                     let title = action.item.title.clone();
-                    return Task::perform(action_alert(title), |_| Message::OpenDashboard);
+                    // Open/focus the dashboard window and show the native modal
+                    // at the same time, so a window pops up immediately and the
+                    // dialog sits on top of it.
+                    return Task::batch([
+                        Task::done(Message::OpenDashboard),
+                        Task::perform(action_alert(title), |_| Message::NoOp),
+                    ]);
                 }
                 return Task::done(Message::OpenDashboard);
             }
@@ -136,9 +140,15 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
 
             Task::none()
         }
+        Message::NoOp => Task::none(),
         Message::OpenDashboard => {
-            if state.dashboard.is_some() {
-                return Task::none();
+            if let Some(id) = state.dashboard {
+                // Dashboard already exists: restore it if minimized and bring it
+                // forward so the user sees the pending action immediately.
+                return Task::batch([
+                    window::minimize(id, false),
+                    window::gain_focus(id),
+                ]);
             }
             let (id, open) = window::open(window::Settings {
                 size: iced::Size::new(480.0, 640.0),
@@ -488,7 +498,22 @@ fn action_card<'a>(
 #[cfg(any(target_os = "macos", windows))]
 async fn action_alert(title: String) {
     use rfd::{MessageButtons, MessageDialog, MessageLevel};
+
     let _ = tokio::task::spawn_blocking(move || {
+        // On macOS, activate the app before showing the modal so the dialog
+        // actually appears above other windows instead of behind them.
+        // ActivateIgnoringOtherApps is deprecated on macOS 14+, where it has no
+        // effect, but keeping the flag preserves the behaviour on older releases.
+        #[cfg(target_os = "macos")]
+        unsafe {
+            use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication};
+            let app = NSRunningApplication::currentApplication();
+            #[allow(deprecated)]
+            let options = NSApplicationActivationOptions::NSApplicationActivateAllWindows
+                | NSApplicationActivationOptions::NSApplicationActivateIgnoringOtherApps;
+            let _ = app.activateWithOptions(options);
+        }
+
         MessageDialog::new()
             .set_title("AuditReady — action required")
             .set_description(format!(
